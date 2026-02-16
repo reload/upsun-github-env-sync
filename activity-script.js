@@ -344,7 +344,6 @@ function createDeployment(activity, variables) {
   // Determine environment flags from Upsun environment type
   const upsunEnvType = activity.payload?.environment?.type || '';
   const isProduction = upsunEnvType === 'production';
-  const isTransient = upsunEnvType === 'development';
 
   // Get the commit SHA from activity payload
   const ref = getCommitRef(activity);
@@ -353,7 +352,6 @@ function createDeployment(activity, variables) {
     ref: ref,
     environment: environment,
     production_environment: isProduction,
-    transient_environment: isTransient,
     auto_merge: false,
     required_contexts: [] // Bypass status checks
   };
