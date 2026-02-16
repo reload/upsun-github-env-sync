@@ -218,7 +218,7 @@ function processActivity(activity) {
       handleEnvironmentDeployment(activity);
     }
   } catch (error) {
-    console.error('Error processing activity:', error.message);
+    console.log('Error processing activity:', error.message);
   }
 }
 
@@ -262,7 +262,7 @@ function handleEnvironmentDeployment(activity) {
     deployment = createDeployment(activity);
 
     if (!deployment) {
-      console.error('Failed to create deployment');
+      console.log('Failed to create deployment');
       return;
     }
   }
@@ -296,7 +296,7 @@ function getLatestDeployment(activity) {
       }
     });
     if (!response.ok) {
-      console.error(`Failed to fetch deployment: ${response.status} ${response.statusText}`);
+      console.log(`Failed to fetch deployment: ${response.status} ${response.statusText}`);
       return null;
     }
 
@@ -309,7 +309,7 @@ function getLatestDeployment(activity) {
 
     return deployments[0];
   } catch (error) {
-    console.error('Error fetching deployment:', error.message);
+    console.log('Error fetching deployment:', error.message);
     return null;
   }
 }
@@ -357,8 +357,8 @@ function createDeployment(activity) {
 
     if (!response.ok) {
       const errorText = response.text();
-      console.error(`Failed to create deployment: ${response.status} ${response.statusText}`);
-      console.error('Response:', errorText);
+      console.log(`Failed to create deployment: ${response.status} ${response.statusText}`);
+      console.log('Response:', errorText);
       return null;
     }
 
@@ -368,7 +368,7 @@ function createDeployment(activity) {
 
     return deployment;
   } catch (error) {
-    console.error('Error creating deployment:', error.message);
+    console.log('Error creating deployment:', error.message);
     return null;
   }
 }
@@ -400,14 +400,14 @@ function createDeploymentStatus(activity, deploymentId, status) {
 
     if (!response.ok) {
       const errorText = response.text();
-      console.error(`Failed to create deployment status: ${response.status} ${response.statusText}`);
-      console.error('Response:', errorText);
+      console.log(`Failed to create deployment status: ${response.status} ${response.statusText}`);
+      console.log('Response:', errorText);
       return false;
     }
 
     return true;
   } catch (error) {
-    console.error('Error creating deployment status:', error.message);
+    console.log('Error creating deployment status:', error.message);
     return false;
   }
 }
@@ -495,7 +495,7 @@ function getEnvironmentUrl(activity) {
       }
     }
   } catch (error) {
-    console.error('Error getting primary route:', error.message);
+    console.log('Error getting primary route:', error.message);
   }
 }
 
@@ -524,7 +524,7 @@ function getCommitRef(activity) {
       return activity.parameters.new_commit;
     }
   } catch (error) {
-    console.error('Error getting commit ref:', error.message);
+    console.log('Error getting commit ref:', error.message);
   }
 
   // Fallback: use environment name as ref
@@ -552,7 +552,7 @@ function main(activity) {
   // Validate required configuration
   const validation = validateConfiguration(activity);
   if (!validation.valid) {
-    console.error('Configuration error:', validation.error);
+    console.log('Configuration error:', validation.error);
     return;
   }
 
