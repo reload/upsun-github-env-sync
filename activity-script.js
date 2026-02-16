@@ -219,7 +219,9 @@ function processActivity(activity, variables) {
   try {
     // Determine what action to take based on activity type and state
     if (activity.type === 'environment.deactivate' || activity.type === 'environment.delete') {
-      handleEnvironmentDeactivation(activity, variables);
+      if (activity.state === 'complete') {
+        handleEnvironmentDeactivation(activity, variables);
+      }
     } else {
       handleEnvironmentDeployment(activity, variables);
     }
