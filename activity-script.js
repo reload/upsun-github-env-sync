@@ -164,6 +164,8 @@ function shouldProcessActivity(activity) {
   const supportedTypes = [
     'environment.push',
     'environment.activate',
+    'environment.domain.create',
+    'environment.domain.delete',
     'environment.deactivate',
     'environment.delete'
   ];
