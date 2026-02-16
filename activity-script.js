@@ -136,13 +136,6 @@
  * @typedef {Array<GitHubDeployment>} GitHubDeploymentsResponse
  */
 
-/**
- * Global variables provided by Upsun
- * @type {UpsunActivity}
- */
-// @ts-ignore - Global provided by Upsun runtime
-const activity = typeof activity !== 'undefined' ? activity : {};
-
 // ============================================================================
 // Configuration Constants
 // ============================================================================
@@ -527,25 +520,32 @@ function getCommitRef(activity) {
 /**
  * Main entry point for the activity script
  */
-(async function main() {
-  'use strict';
+(
+  /**
+   * @param {UpsunActivity} activity
+   * @returns {Promise<void>}
+   */
+  async function main(activity) {
+    'use strict';
 
-  // Check if we should process this activity
-  if (!shouldProcessActivity()) {
-    console.log(`Skipping activity type: ${activity.type}, state: ${activity.state}`);
-    return;
+    // Check if we should process this activity
+    if (!shouldProcessActivity(activity)) {
+      console.log(`Skipping activity type: ${activity.type}, state: ${activity.state}`);
+      return;
+    }
+
+    // Validate required configuration
+    const validation = validateConfiguration(activity);
+    if (!validation.valid) {
+      console.error('Configuration error:', validation.error);
+      return;
+    }
+
+    const environment = activity.environments[0];
+    console.log(`Processing activity: ${activity.type} (${activity.state}) for environment: ${environment}`);
+
+    // Process the activity
+    await processActivity(activity);
   }
-
-  // Validate required configuration
-  const validation = validateConfiguration(activity);
-  if (!validation.valid) {
-    console.error('Configuration error:', validation.error);
-    return;
-  }
-
-  const environment = activity.environments[0];
-  console.log(`Processing activity: ${activity.type} (${activity.state}) for environment: ${environment}`);
-
-  // Process the activity
-  await processActivity(activity);
-})();
+// @ts-ignore
+)(activity);
