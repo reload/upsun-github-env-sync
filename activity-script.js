@@ -47,6 +47,7 @@
  * @property {string} edge_hostname - The URL you should target when setting up a custom domain
  * @property {boolean} is_main - Whether this is the main environment
  * @property {boolean} is_pr - Whether this is a PR environment
+ * @property {string} status - Whether the environment is active or not
  */
 
 /**
@@ -204,6 +205,10 @@ function validateConfiguration(activity, variables) {
 
   if (!activity.environments || activity.environments.length === 0) {
     return { valid: false, error: 'Environment not available' };
+  }
+
+  if (activity?.payload.environment.status && activity.payload.environment.status !== 'active') {
+    return { valid: false, error: 'Upsun environment is not active' };
   }
 
   return { valid: true };
