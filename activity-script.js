@@ -64,6 +64,20 @@
  */
 
 /**
+ * @typedef {Object} UpsunRoute
+ * @property {string} [id] - Route ID
+ * @property {boolean} primary - Whether this is the primary route
+ * @property {string} type - Route type ("upstream" | "redirect")
+ * @property {string} [production_url] - Production URL
+ */
+
+/**
+ * @typedef {Object} UpsunDeployment
+ * @property {string} id - Deployment ID
+ * @property {Object.<string, UpsunRoute>} routes - All the URLs connected to the environment (includes redirects; filter by type="upstream" to exclude redirects)
+ */
+
+/**
  * @typedef {Object} UpsunActivityPayload
  * @property {Object} user - User who triggered the activity
  * @property {string} user.id - User ID
@@ -71,7 +85,7 @@
  * @property {UpsunEnvironment} environment - Environment configuration
  * @property {Array<UpsunCommit>} [commits] - Git commits in the push
  * @property {number} [commits_count] - Number of commits
- * @property {Object} [deployment] - Deployment configuration
+ * @property {UpsunDeployment} [deployment] - Deployment configuration
  */
 
 /**
@@ -80,12 +94,6 @@
  * @property {string} [environment] - Environment name
  * @property {string} [old_commit] - Previous Git commit hash
  * @property {string} [new_commit] - New Git commit hash
- */
-
-/**
- * @typedef {Object} UpsunRoute
- * @property {boolean} [primary] - Whether this is the primary route
- * @property {string} [type] - Route type
  */
 
 
@@ -444,7 +452,20 @@ function getDeploymentStatus(activity) {
 }
 
 /**
- * Get the environment URL from Platform.sh routes
+ * Returns the primary route from the deployment configuration.
+ * @param {UpsunActivity} activity - Upsun activity object
+ * @returns {{route: UpsunRoute, url: string}|{}}
+ */
+function getPrimaryRoute(activity) {
+  return Object.entries(activity.payload.deployment.routes).reduce(
+    (primary, [url, route]) =>
+      route.primary ? { route, url } : primary,
+    {}
+  );
+}
+
+/**
+ * Get the environment URL from Upsun routes
  * @param {UpsunActivity} activity - Upsun activity object
  * @returns {string}
  */
@@ -452,28 +473,16 @@ function getEnvironmentUrl(activity) {
   const environment = activity.environments[0];
 
   try {
-    // Try to get from PLATFORM_ROUTES environment variable
-    const routesEnv = activity.variables.PLATFORM_ROUTES;
-    if (routesEnv) {
-      // Routes are base64 encoded JSON
-      const routesJson = atob(routesEnv);
-      const routes = JSON.parse(routesJson);
-
-      // Find the primary route
-      for (const [url, route] of Object.entries(routes)) {
-        if (route.primary === true) {
-          return url;
-        }
-      }
-
-      // If no primary route, return first route
-      const firstUrl = Object.keys(routes)[0];
-      if (firstUrl) {
-        return firstUrl;
+    // Try to get primary route from deployment payload
+    if (activity.payload?.deployment?.routes) {
+      const primaryRoute = getPrimaryRoute(activity);
+      if (primaryRoute && 'route' in primaryRoute) {
+        // Prefer production_url, fallback to the URL key from routes object
+        return primaryRoute.route.production_url || primaryRoute.url;
       }
     }
   } catch (error) {
-    console.error('Error parsing PLATFORM_ROUTES:', error.message);
+    console.error('Error getting primary route:', error.message);
   }
 
   // Fallback: construct URL from environment name
@@ -517,19 +526,6 @@ function getCommitRef(activity) {
   return activity.environments[0];
 }
 
-
-/**
- * Polyfill for atob if not available
- * @param {string} str - Base64 encoded string
- * @returns {string}
- */
-function atob(str) {
-  if (typeof Buffer !== 'undefined') {
-    return Buffer.from(str, 'base64').toString('binary');
-  }
-  // Fallback for environments without Buffer
-  throw new Error('atob not available and Buffer not found');
-}
 
 // ============================================================================
 // Main Execution
