@@ -487,7 +487,11 @@ function getDeploymentStatus(activity) {
  * @returns {{route: UpsunRoute, url: string}|{}}
  */
 function getPrimaryRoute(activity) {
-  return Object.entries(activity.payload.deployment.routes).reduce(
+  const routes = activity.payload?.deployment?.routes;
+  if (!routes) {
+    return {};
+  }
+  return Object.entries(routes).reduce(
     (primary, [url, route]) =>
       route.primary ? { route, url } : primary,
     {}
@@ -504,14 +508,11 @@ function getEnvironmentUrl(activity) {
 
   try {
     // Try to get primary route from deployment payload
-    if (activity.payload?.deployment?.routes) {
-      const primaryRoute = getPrimaryRoute(activity);
-      if (primaryRoute && 'route' in primaryRoute) {
-        // Prefer production_url, fallback to the URL key from routes object
-        return primaryRoute.route.production_url || primaryRoute.url;
-      }
+    const primaryRoute = getPrimaryRoute(activity);
+    if ('url' in primaryRoute) {
+      return primaryRoute.url;
     }
-    console.log('Unable to determine url for environment', JSON.stringify(activity, 2, null));
+    console.log('Unable to determine url for environment', JSON.stringify(activity, null, 2));
   } catch (error) {
     console.log('Error getting primary route:', error.message);
   }
