@@ -96,7 +96,6 @@
  * @property {string} [new_commit] - New Git commit hash
  */
 
-
 /**
  * GitHub Deployment object from the Deployments API
  * @see https://docs.github.com/en/rest/deployments/deployments
@@ -191,15 +190,15 @@ function validateConfiguration(activity) {
 /**
  * Process the activity and update GitHub deployment status
  * @param {UpsunActivity} activity - Upsun activity object
- * @returns {Promise<void>}
+ * @returns {void}
  */
-async function processActivity(activity) {
+function processActivity(activity) {
   try {
     // Determine what action to take based on activity type and state
     if (activity.type === 'environment.deactivate' || activity.type === 'environment.delete') {
-      await handleEnvironmentDeactivation(activity);
+      handleEnvironmentDeactivation(activity);
     } else {
-      await handleEnvironmentDeployment(activity);
+      handleEnvironmentDeployment(activity);
     }
   } catch (error) {
     console.error('Error processing activity:', error.message);
@@ -209,22 +208,21 @@ async function processActivity(activity) {
 /**
  * Handle environment deactivation/deletion
  * @param {UpsunActivity} activity - Upsun activity object
- * @returns {Promise<void>}
+ * @returns {void}
  */
-async function handleEnvironmentDeactivation(activity) {
+function handleEnvironmentDeactivation(activity) {
   const environment = activity.environments[0];
   console.log(`Marking deployment as inactive for environment: ${environment}`);
 
   // Get the latest deployment for this environment
-  const deployment = await getLatestDeployment(activity);
-
+  const deployment = getLatestDeployment(activity);
   if (!deployment) {
     console.log('No deployment found to deactivate');
     return;
   }
 
   // Mark deployment as inactive
-  await createDeploymentStatus(activity, deployment.id, {
+  createDeploymentStatus(activity, deployment.id, {
     state: 'inactive',
     description: 'Environment closed'
   });
@@ -235,16 +233,16 @@ async function handleEnvironmentDeactivation(activity) {
 /**
  * Handle environment deployment (push/activate)
  * @param {UpsunActivity} activity - Upsun activity object
- * @returns {Promise<void>}
+ * @returns {void}
  */
-async function handleEnvironmentDeployment(activity) {
+function handleEnvironmentDeployment(activity) {
   // Get or create deployment
-  let deployment = await getLatestDeployment(activity);
+  let deployment = getLatestDeployment(activity);
 
   // If no deployment exists, create one
   if (!deployment) {
     console.log('No deployment found, creating new deployment');
-    deployment = await createDeployment(activity);
+    deployment = createDeployment(activity);
 
     if (!deployment) {
       console.error('Failed to create deployment');
@@ -258,35 +256,35 @@ async function handleEnvironmentDeployment(activity) {
   console.log(`Updating deployment ${deployment.id} status to: ${status.state}`);
 
   // Update deployment status
-  await createDeploymentStatus(activity, deployment.id, status);
+  createDeploymentStatus(activity, deployment.id, status);
 }
 
 /**
  * Get the latest deployment for an environment
  * @param {UpsunActivity} activity - Upsun activity object
- * @returns {Promise<GitHubDeployment|null>}
+ * @returns {GitHubDeployment|null}
  */
-async function getLatestDeployment(activity) {
+function getLatestDeployment(activity) {
   const repo = activity.variables.GH_REPO;
   const environment = activity.environments[0];
   const url = `${GITHUB_API_BASE}/repos/${repo}/deployments?environment=${environment}&per_page=1`;
 
   try {
-    const response = await fetch(url, {
+    /** @type Response|any */
+    const response = fetch(url, {
       headers: {
         'Accept': 'application/vnd.github+json',
         'Authorization': `Bearer ${activity.variables.GH_TOKEN}`,
         'X-GitHub-Api-Version': GITHUB_API_VERSION
       }
     });
-
     if (!response.ok) {
       console.error(`Failed to fetch deployment: ${response.status} ${response.statusText}`);
       return null;
     }
 
     /** @type {GitHubDeploymentsResponse} */
-    const deployments = await response.json();
+    const deployments = response.json();
 
     if (deployments.length === 0) {
       return null;
@@ -302,9 +300,9 @@ async function getLatestDeployment(activity) {
 /**
  * Create a new GitHub deployment
  * @param {UpsunActivity} activity - Upsun activity object
- * @returns {Promise<GitHubDeployment|null>}
+ * @returns {GitHubDeployment|null}
  */
-async function createDeployment(activity) {
+function createDeployment(activity) {
   const repo = activity.variables.GH_REPO;
   const environment = activity.environments[0];
   const url = `${GITHUB_API_BASE}/repos/${repo}/deployments`;
@@ -327,7 +325,8 @@ async function createDeployment(activity) {
   };
 
   try {
-    const response = await fetch(url, {
+    /** @type Response|any */
+    const response = fetch(url, {
       method: 'POST',
       headers: {
         'Accept': 'application/vnd.github+json',
@@ -339,14 +338,14 @@ async function createDeployment(activity) {
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
+      const errorText = response.text();
       console.error(`Failed to create deployment: ${response.status} ${response.statusText}`);
       console.error('Response:', errorText);
       return null;
     }
 
     /** @type {GitHubDeployment} */
-    const deployment = await response.json();
+    const deployment = response.json();
     console.log(`Created deployment ${deployment.id} for environment: ${environment}`);
 
     return deployment;
@@ -361,14 +360,15 @@ async function createDeployment(activity) {
  * @param {UpsunActivity} activity - Upsun activity object
  * @param {number} deploymentId - GitHub deployment ID
  * @param {GitHubDeploymentStatus} status - Deployment status to create
- * @returns {Promise<boolean>}
+ * @returns {boolean}
  */
-async function createDeploymentStatus(activity, deploymentId, status) {
+function createDeploymentStatus(activity, deploymentId, status) {
   const repo = activity.variables.GH_REPO;
   const url = `${GITHUB_API_BASE}/repos/${repo}/deployments/${deploymentId}/statuses`;
 
   try {
-    const response = await fetch(url, {
+    /** @type Response|any */
+    const response = fetch(url, {
       method: 'POST',
       headers: {
         'Accept': 'application/vnd.github+json',
@@ -380,7 +380,7 @@ async function createDeploymentStatus(activity, deploymentId, status) {
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
+      const errorText = response.text();
       console.error(`Failed to create deployment status: ${response.status} ${response.statusText}`);
       console.error('Response:', errorText);
       return false;
@@ -518,34 +518,31 @@ function getCommitRef(activity) {
 // ============================================================================
 
 /**
- * Main entry point for the activity script
+ * @param {UpsunActivity} activity
+ * @returns {void}
  */
-(
-  /**
-   * @param {UpsunActivity} activity
-   * @returns {Promise<void>}
-   */
-  async function main(activity) {
-    'use strict';
+function main(activity) {
+  'use strict';
 
-    // Check if we should process this activity
-    if (!shouldProcessActivity(activity)) {
-      console.log(`Skipping activity type: ${activity.type}, state: ${activity.state}`);
-      return;
-    }
-
-    // Validate required configuration
-    const validation = validateConfiguration(activity);
-    if (!validation.valid) {
-      console.error('Configuration error:', validation.error);
-      return;
-    }
-
-    const environment = activity.environments[0];
-    console.log(`Processing activity: ${activity.type} (${activity.state}) for environment: ${environment}`);
-
-    // Process the activity
-    await processActivity(activity);
+  // Check if we should process this activity
+  if (!shouldProcessActivity(activity)) {
+    console.log(`Skipping activity type: ${activity.type}, state: ${activity.state}`);
+    return;
   }
+
+  // Validate required configuration
+  const validation = validateConfiguration(activity);
+  if (!validation.valid) {
+    console.error('Configuration error:', validation.error);
+    return;
+  }
+
+  const environment = activity.environments[0];
+  console.log(`Processing activity: ${activity.type} (${activity.state}) for environment: ${environment}`);
+
+  // Process the activity
+  processActivity(activity);
+}
+
 // @ts-ignore
-)(activity);
+main(activity);
