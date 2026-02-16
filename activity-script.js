@@ -207,8 +207,8 @@ function validateConfiguration(activity, variables) {
     return { valid: false, error: 'Environment not available' };
   }
 
-  if (activity?.payload.environment.status && activity.payload.environment.status !== 'active') {
-    return { valid: false, error: 'Upsun environment is not active' };
+  if (activity?.payload.environment.status && activity.payload.environment.status === 'inactive') {
+    return { valid: false, error: 'Upsun environment is inactive' };
   }
 
   return { valid: true };
