@@ -484,14 +484,6 @@ function getEnvironmentUrl(activity) {
   } catch (error) {
     console.error('Error getting primary route:', error.message);
   }
-
-  // Fallback: construct URL from environment name
-  // This is project-specific and may need adjustment
-  if (environment === 'main') {
-    return 'https://www.bupl.dk';
-  }
-
-  return `https://${environment}.webtestbupl.dk`;
 }
 
 /**
