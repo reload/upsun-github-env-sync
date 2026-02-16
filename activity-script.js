@@ -285,10 +285,9 @@ function handleEnvironmentDeployment(activity, variables) {
   // Determine deployment status based on activity state
   const status = getDeploymentStatus(activity);
 
-  console.log(`Updating deployment ${deployment.id} status to: ${status.state}`);
-
   // Update deployment status
   createDeploymentStatus(activity, variables, deployment.id, status);
+  console.log(`Updated deployment ${deployment.id} status to: ${status.state}`, JSON.stringify(status, null, 2));
 }
 
 /**
@@ -381,7 +380,7 @@ function createDeployment(activity, variables) {
 
     /** @type {GitHubDeployment} */
     const deployment = response.json();
-    console.log(`Created deployment ${deployment.id} for environment: ${environment}`);
+    console.log(`Created deployment ${deployment.id} for environment: ${environment}`, JSON.stringify(deployment, null, 2));
 
     return deployment;
   } catch (error) {
@@ -512,6 +511,7 @@ function getEnvironmentUrl(activity) {
         return primaryRoute.route.production_url || primaryRoute.url;
       }
     }
+    console.log('Unable to determine url for environment', JSON.stringify(activity, 2, null));
   } catch (error) {
     console.log('Error getting primary route:', error.message);
   }
