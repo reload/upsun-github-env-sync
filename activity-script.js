@@ -174,8 +174,8 @@ function shouldProcessActivity(activity) {
  */
 function githubConfig(activity) {
   return {
-    GH_REPO: activity.payload.deployment.variables.find(v => v.name === 'GH_REPO')?.value,
-    GH_TOKEN: activity.payload.deployment.variables.find(v => v.name === 'GH_TOKEN')?.value
+    GH_REPO: activity.payload?.deployment.variables.find(v => v.name === 'GH_REPO')?.value,
+    GH_TOKEN: activity.payload?.deployment.variables.find(v => v.name === 'GH_TOKEN')?.value
   };
 }
 
