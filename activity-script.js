@@ -552,7 +552,7 @@ function main(activity) {
   // Validate required configuration
   const validation = validateConfiguration(activity);
   if (!validation.valid) {
-    console.log('Configuration error:', validation.error);
+    console.log('Configuration error:', validation.error, JSON.stringify(activity, null, 2));
     return;
   }
 
