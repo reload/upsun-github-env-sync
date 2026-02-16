@@ -78,7 +78,7 @@
  * @typedef {Object} UpsunDeployment
  * @property {string} id - Deployment ID
  * @property {Object.<string, UpsunRoute>} routes - All the URLs connected to the environment (includes redirects; filter by type="upstream" to exclude redirects)
- * @property {UpsunVariable[]} variables - All the variables for the environment
+ * @property {UpsunVariable[]} [variables] - All the variables for the environment
  */
 
 /**
@@ -174,8 +174,8 @@ function shouldProcessActivity(activity) {
  */
 function githubConfig(activity) {
   return {
-    GH_REPO: activity.payload?.deployment.variables.find(v => v.name === 'GH_REPO')?.value,
-    GH_TOKEN: activity.payload?.deployment.variables.find(v => v.name === 'GH_TOKEN')?.value
+    GH_REPO: activity.payload?.deployment?.variables.find(v => v.name === 'GH_REPO')?.value,
+    GH_TOKEN: activity.payload?.deployment?.variables.find(v => v.name === 'GH_TOKEN')?.value
   };
 }
 
