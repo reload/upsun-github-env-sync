@@ -31,9 +31,6 @@
  * @property {string} [result] - Activity result: "success" | "failure" (only when state is "complete")
  * @property {string} project - Project ID
  * @property {string[]} environments - Array of environment names affected by this activity
- * @property {Object} variables - Environment variables available to the activity
- * @property {string} [variables.GH_TOKEN] - GitHub personal access token
- * @property {string} [variables.GH_REPO] - GitHub repository in format "owner/repo"
  * @property {string} [variables.PLATFORM_ROUTES] - Base64 encoded JSON of platform routes
  * @property {UpsunActivityPayload} [payload] - Detailed activity information
  * @property {UpsunActivityParameters} [parameters] - Activity parameters
@@ -72,9 +69,16 @@
  */
 
 /**
+ * @typedef {Object} UpsunVariable
+ * @property {string} name - Variable name
+ * @property {string} [value] - Value (if not sensitive)
+ */
+
+/**
  * @typedef {Object} UpsunDeployment
  * @property {string} id - Deployment ID
  * @property {Object.<string, UpsunRoute>} routes - All the URLs connected to the environment (includes redirects; filter by type="upstream" to exclude redirects)
+ * @property {UpsunVariable[]} variables - All the variables for the environment
  */
 
 /**
@@ -163,16 +167,29 @@ function shouldProcessActivity(activity) {
 }
 
 /**
+ * Parse GitHub configuration from the current activity.
+ *
+ * @param {UpsunActivity} activity
+ * @return {{GH_REPO: string?, GH_TOKEN: string?}}
+ */
+function githubConfig(activity) {
+  return {
+    GH_REPO: activity.payload.deployment.variables.find(v => v.name === 'GH_REPO')?.value,
+    GH_TOKEN: activity.payload.deployment.variables.find(v => v.name === 'GH_TOKEN')?.value
+  };
+}
+
+/**
  * Validate required configuration from activity
  * @param {UpsunActivity} activity - Upsun activity object
  * @returns {{valid: boolean, error?: string}}
  */
 function validateConfiguration(activity) {
-  if (!activity.variables.GH_TOKEN) {
+  if (!githubConfig(activity).GH_TOKEN) {
     return { valid: false, error: 'GH_TOKEN variable not set' };
   }
 
-  if (!activity.variables.GH_REPO) {
+  if (!githubConfig(activity).GH_REPO) {
     return { valid: false, error: 'GH_REPO variable not set' };
   }
 
@@ -265,7 +282,7 @@ function handleEnvironmentDeployment(activity) {
  * @returns {GitHubDeployment|null}
  */
 function getLatestDeployment(activity) {
-  const repo = activity.variables.GH_REPO;
+  const repo = githubConfig(activity).GH_REPO;
   const environment = activity.environments[0];
   const url = `${GITHUB_API_BASE}/repos/${repo}/deployments?environment=${environment}&per_page=1`;
 
@@ -274,7 +291,7 @@ function getLatestDeployment(activity) {
     const response = fetch(url, {
       headers: {
         'Accept': 'application/vnd.github+json',
-        'Authorization': `Bearer ${activity.variables.GH_TOKEN}`,
+        'Authorization': `Bearer ${githubConfig(activity).GH_TOKEN}`,
         'X-GitHub-Api-Version': GITHUB_API_VERSION
       }
     });
@@ -303,7 +320,8 @@ function getLatestDeployment(activity) {
  * @returns {GitHubDeployment|null}
  */
 function createDeployment(activity) {
-  const repo = activity.variables.GH_REPO;
+  const github = githubConfig(activity);
+  const repo = github.GH_REPO;
   const environment = activity.environments[0];
   const url = `${GITHUB_API_BASE}/repos/${repo}/deployments`;
 
@@ -330,7 +348,7 @@ function createDeployment(activity) {
       method: 'POST',
       headers: {
         'Accept': 'application/vnd.github+json',
-        'Authorization': `Bearer ${activity.variables.GH_TOKEN}`,
+        'Authorization': `Bearer ${github.GH_TOKEN}`,
         'X-GitHub-Api-Version': GITHUB_API_VERSION,
         'Content-Type': 'application/json'
       },
@@ -363,7 +381,8 @@ function createDeployment(activity) {
  * @returns {boolean}
  */
 function createDeploymentStatus(activity, deploymentId, status) {
-  const repo = activity.variables.GH_REPO;
+  const github = githubConfig(activity);
+  const repo = github.GH_REPO;
   const url = `${GITHUB_API_BASE}/repos/${repo}/deployments/${deploymentId}/statuses`;
 
   try {
@@ -372,7 +391,7 @@ function createDeploymentStatus(activity, deploymentId, status) {
       method: 'POST',
       headers: {
         'Accept': 'application/vnd.github+json',
-        'Authorization': `Bearer ${activity.variables.GH_TOKEN}`,
+        'Authorization': `Bearer ${github.GH_TOKEN}`,
         'X-GitHub-Api-Version': GITHUB_API_VERSION,
         'Content-Type': 'application/json'
       },
