@@ -101,6 +101,10 @@
  */
 
 /**
+ * @typedef {Object.<string, string>} UpsunVariables
+ */
+
+/**
  * GitHub Deployment object from the Deployments API
  * @see https://docs.github.com/en/rest/deployments/deployments
  * @typedef {Object} GitHubDeployment
@@ -169,27 +173,28 @@ function shouldProcessActivity(activity) {
 /**
  * Parse GitHub configuration from the current activity.
  *
- * @param {UpsunActivity} activity
+ * @param {UpsunVariables} variables
  * @return {{GH_REPO: string?, GH_TOKEN: string?}}
  */
-function githubConfig(activity) {
+function githubConfig(variables) {
   return {
-    GH_REPO: activity.payload?.deployment?.variables.find(v => v.name === 'GH_REPO')?.value,
-    GH_TOKEN: activity.payload?.deployment?.variables.find(v => v.name === 'GH_TOKEN')?.value
+    GH_REPO: variables?.GH_REPO,
+    GH_TOKEN: variables?.GH_TOKEN
   };
 }
 
 /**
  * Validate required configuration from activity
  * @param {UpsunActivity} activity - Upsun activity object
+ * @param {UpsunVariables} variables - Upsun integration variables object
  * @returns {{valid: boolean, error?: string}}
  */
-function validateConfiguration(activity) {
-  if (!githubConfig(activity).GH_TOKEN) {
+function validateConfiguration(activity, variables) {
+  if (!githubConfig(variables).GH_TOKEN) {
     return { valid: false, error: 'GH_TOKEN variable not set' };
   }
 
-  if (!githubConfig(activity).GH_REPO) {
+  if (!githubConfig(variables).GH_REPO) {
     return { valid: false, error: 'GH_REPO variable not set' };
   }
 
@@ -206,16 +211,17 @@ function validateConfiguration(activity) {
 
 /**
  * Process the activity and update GitHub deployment status
- * @param {UpsunActivity} activity - Upsun activity object
+ * @param {UpsunActivity} activity
+ * @param {UpsunVariables} variables
  * @returns {void}
  */
-function processActivity(activity) {
+function processActivity(activity, variables) {
   try {
     // Determine what action to take based on activity type and state
     if (activity.type === 'environment.deactivate' || activity.type === 'environment.delete') {
-      handleEnvironmentDeactivation(activity);
+      handleEnvironmentDeactivation(activity, variables);
     } else {
-      handleEnvironmentDeployment(activity);
+      handleEnvironmentDeployment(activity, variables);
     }
   } catch (error) {
     console.log('Error processing activity:', error.message);
@@ -224,22 +230,23 @@ function processActivity(activity) {
 
 /**
  * Handle environment deactivation/deletion
- * @param {UpsunActivity} activity - Upsun activity object
+ * @param {UpsunActivity} activity
+ * @param {UpsunVariables} variables
  * @returns {void}
  */
-function handleEnvironmentDeactivation(activity) {
+function handleEnvironmentDeactivation(activity, variables) {
   const environment = activity.environments[0];
   console.log(`Marking deployment as inactive for environment: ${environment}`);
 
   // Get the latest deployment for this environment
-  const deployment = getLatestDeployment(activity);
+  const deployment = getLatestDeployment(activity, variables);
   if (!deployment) {
     console.log('No deployment found to deactivate');
     return;
   }
 
   // Mark deployment as inactive
-  createDeploymentStatus(activity, deployment.id, {
+  createDeploymentStatus(activity, variables, deployment.id, {
     state: 'inactive',
     description: 'Environment closed'
   });
@@ -249,17 +256,18 @@ function handleEnvironmentDeactivation(activity) {
 
 /**
  * Handle environment deployment (push/activate)
- * @param {UpsunActivity} activity - Upsun activity object
+ * @param {UpsunActivity} activity
+ * @param {UpsunVariables} variables
  * @returns {void}
  */
-function handleEnvironmentDeployment(activity) {
+function handleEnvironmentDeployment(activity, variables) {
   // Get or create deployment
-  let deployment = getLatestDeployment(activity);
+  let deployment = getLatestDeployment(activity, variables);
 
   // If no deployment exists, create one
   if (!deployment) {
     console.log('No deployment found, creating new deployment');
-    deployment = createDeployment(activity);
+    deployment = createDeployment(activity, variables);
 
     if (!deployment) {
       console.log('Failed to create deployment');
@@ -273,16 +281,17 @@ function handleEnvironmentDeployment(activity) {
   console.log(`Updating deployment ${deployment.id} status to: ${status.state}`);
 
   // Update deployment status
-  createDeploymentStatus(activity, deployment.id, status);
+  createDeploymentStatus(activity, variables, deployment.id, status);
 }
 
 /**
  * Get the latest deployment for an environment
- * @param {UpsunActivity} activity - Upsun activity object
+ * @param {UpsunActivity} activity
+ * @param {UpsunVariables} variables
  * @returns {GitHubDeployment|null}
  */
-function getLatestDeployment(activity) {
-  const repo = githubConfig(activity).GH_REPO;
+function getLatestDeployment(activity, variables) {
+  const repo = githubConfig(variables).GH_REPO;
   const environment = activity.environments[0];
   const url = `${GITHUB_API_BASE}/repos/${repo}/deployments?environment=${environment}&per_page=1`;
 
@@ -291,7 +300,7 @@ function getLatestDeployment(activity) {
     const response = fetch(url, {
       headers: {
         'Accept': 'application/vnd.github+json',
-        'Authorization': `Bearer ${githubConfig(activity).GH_TOKEN}`,
+        'Authorization': `Bearer ${githubConfig(variables).GH_TOKEN}`,
         'X-GitHub-Api-Version': GITHUB_API_VERSION
       }
     });
@@ -316,11 +325,12 @@ function getLatestDeployment(activity) {
 
 /**
  * Create a new GitHub deployment
- * @param {UpsunActivity} activity - Upsun activity object
+ * @param {UpsunActivity} activity
+ * @param {UpsunVariables} variables
  * @returns {GitHubDeployment|null}
  */
-function createDeployment(activity) {
-  const github = githubConfig(activity);
+function createDeployment(activity, variables) {
+  const github = githubConfig(variables);
   const repo = github.GH_REPO;
   const environment = activity.environments[0];
   const url = `${GITHUB_API_BASE}/repos/${repo}/deployments`;
@@ -375,13 +385,14 @@ function createDeployment(activity) {
 
 /**
  * Create a deployment status
- * @param {UpsunActivity} activity - Upsun activity object
+ * @param {UpsunActivity} activity
+ * @param {UpsunVariables} variables
  * @param {number} deploymentId - GitHub deployment ID
  * @param {GitHubDeploymentStatus} status - Deployment status to create
  * @returns {boolean}
  */
-function createDeploymentStatus(activity, deploymentId, status) {
-  const github = githubConfig(activity);
+function createDeploymentStatus(activity, variables, deploymentId, status) {
+  const github = githubConfig(variables);
   const repo = github.GH_REPO;
   const url = `${GITHUB_API_BASE}/repos/${repo}/deployments/${deploymentId}/statuses`;
 
@@ -414,7 +425,7 @@ function createDeploymentStatus(activity, deploymentId, status) {
 
 /**
  * Determine deployment status based on activity state and result
- * @param {UpsunActivity} activity - Upsun activity object
+ * @param {UpsunActivity} activity
  * @returns {GitHubDeploymentStatus}
  */
 function getDeploymentStatus(activity) {
@@ -538,9 +549,10 @@ function getCommitRef(activity) {
 
 /**
  * @param {UpsunActivity} activity
+ * @param {UpsunVariables} variables
  * @returns {void}
  */
-function main(activity) {
+function main(activity, variables) {
   'use strict';
 
   // Check if we should process this activity
@@ -550,7 +562,7 @@ function main(activity) {
   }
 
   // Validate required configuration
-  const validation = validateConfiguration(activity);
+  const validation = validateConfiguration(activity, variables);
   if (!validation.valid) {
     console.log('Configuration error:', validation.error, JSON.stringify(activity, null, 2));
     return;
@@ -560,8 +572,8 @@ function main(activity) {
   console.log(`Processing activity: ${activity.type} (${activity.state}) for environment: ${environment}`);
 
   // Process the activity
-  processActivity(activity);
+  processActivity(activity, variables);
 }
 
 // @ts-ignore
-main(activity);
+main(activity, variables);
