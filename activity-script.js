@@ -156,9 +156,10 @@ const GITHUB_API_BASE = 'https://api.github.com';
 
 /**
  * Determine if this activity should be processed
+ * @param {UpsunActivity} activity - Upsun activity object
  * @returns {boolean}
  */
-function shouldProcessActivity() {
+function shouldProcessActivity(activity) {
   const supportedTypes = [
     'environment.push',
     'environment.activate',
