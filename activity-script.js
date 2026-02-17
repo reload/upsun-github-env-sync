@@ -530,14 +530,10 @@ function getEnvironmentUrl(activity) {
 function getLogUrl(context) {
   // The owner slug is not directly available in any of the provided properties
   // so we have to extract it.
-  const url = new URL(context.project.subscription.subscription_management_uri);
-  const ownerSlug = url.pathname
-    // Remove leading / to avoid empty parts when splitting
-    .slice(1)
-    // Separate the first part of the path which contains the slug.
-    .split('/', 2)
-    .shift();
-
+  // Separate the first part of the path which contains the slug.
+  const matches = context.project.subscription.subscription_management_uri
+    .match(/\.com\/([^/]+)/);
+  const ownerSlug = matches[1];
   return `https://console.upsun.com/${ownerSlug}/${context.activity.project}/-/log/${context.activity.id}`;
 }
 
