@@ -114,6 +114,8 @@
 
 /**
  * @typedef {Object} UpsunProject
+ * @property {Object} subscription - The subscription for the project
+ * @property {string} [subscription.subscription_management_uri] - Url to the the management of the subscription
  */
 
 /**
@@ -291,10 +293,8 @@ function handleEnvironmentDeployment(context) {
     }
   }
 
-  // Determine deployment status based on activity state
-  const status = getDeploymentStatus(context.activity);
+  const status = generateDeploymentStatus(context);
 
-  // Update deployment status
   createDeploymentStatus(context, deployment.id, status);
   console.log(`Updated deployment ${deployment.id} status to: ${status.state}`, JSON.stringify(status, null, 2));
 }
@@ -434,15 +434,15 @@ function createDeploymentStatus(context, deploymentId, status) {
 }
 
 /**
- * Determine deployment status based on activity state and result
- * @param {UpsunActivity} activity
+ * Generate deployment status based on activity state and result
+ * @param {UpsunContext} context
  * @returns {GitHubDeploymentStatus}
  */
-function getDeploymentStatus(activity) {
-  const logUrl = `https://console.upsun.com/reload-frf/${activity.project}/-/log/${activity.id}`;
+function generateDeploymentStatus(context) {
+  const logUrl = getLogUrl(context);
 
   // Activity is pending/starting
-  if (activity.state === 'pending') {
+  if (context.activity.state === 'pending') {
     return {
       state: 'queued',
       description: 'Deployment queued'
@@ -450,7 +450,7 @@ function getDeploymentStatus(activity) {
   }
 
   // Activity is in progress
-  if (activity.state === 'in_progress') {
+  if (context.activity.state === 'in_progress') {
     return {
       state: 'in_progress',
       description: 'Deployment in progress',
@@ -459,9 +459,9 @@ function getDeploymentStatus(activity) {
   }
 
   // Activity is complete
-  if (activity.state === 'complete') {
-    if (activity.result === 'success') {
-      const environmentUrl = getEnvironmentUrl(activity);
+  if (context.activity.state === 'complete') {
+    if (context.activity.result === 'success') {
+      const environmentUrl = getEnvironmentUrl(context.activity);
       return {
         state: 'success',
         description: 'Deployment successful',
@@ -505,7 +505,7 @@ function getPrimaryRoute(activity) {
 /**
  * Get the environment URL from Upsun routes
  * @param {UpsunActivity} activity - Upsun activity object
- * @returns {string}
+ * @returns {string?}
  */
 function getEnvironmentUrl(activity) {
   const environment = activity.environments[0];
@@ -520,6 +520,25 @@ function getEnvironmentUrl(activity) {
   } catch (error) {
     console.log('Error getting primary route:', error.message);
   }
+}
+
+/**
+ * Get the log url from an activity.
+ * @param {UpsunContext} context
+ * @return {string}
+ */
+function getLogUrl(context) {
+  // The owner slug is not directly available in any of the provided properties
+  // so we have to extract it.
+  const url = new URL(context.project.subscription.subscription_management_uri);
+  const ownerSlug = url.pathname
+    // Remove leading / to avoid empty parts when splitting
+    .slice(1)
+    // Separate the first part of the path which contains the slug.
+    .split('/', 2)
+    .shift();
+
+  return `https://console.upsun.com/${ownerSlug}/${context.activity.project}/-/log/${context.activity.id}`;
 }
 
 /**
