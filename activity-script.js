@@ -151,7 +151,6 @@
  * @property {boolean} [auto_inactive] - Mark previous deployments as inactive
  */
 
-
 /**
  * GitHub Deployments API response - array of deployments
  * @typedef {Array<GitHubDeployment>} GitHubDeploymentsResponse
@@ -161,8 +160,8 @@
 // Configuration Constants
 // ============================================================================
 
-const GITHUB_API_VERSION = '2022-11-28';
-const GITHUB_API_BASE = 'https://api.github.com';
+const GITHUB_API_VERSION = "2022-11-28";
+const GITHUB_API_BASE = "https://api.github.com";
 
 // ============================================================================
 // Function Declarations
@@ -175,12 +174,12 @@ const GITHUB_API_BASE = 'https://api.github.com';
  */
 function shouldProcessActivity(activity) {
   const supportedTypes = [
-    'environment.push',
-    'environment.activate',
-    'environment.domain.create',
-    'environment.domain.delete',
-    'environment.deactivate',
-    'environment.delete'
+    "environment.push",
+    "environment.activate",
+    "environment.domain.create",
+    "environment.domain.delete",
+    "environment.deactivate",
+    "environment.delete",
   ];
 
   return supportedTypes.includes(activity.type);
@@ -195,7 +194,7 @@ function shouldProcessActivity(activity) {
 function githubConfig(variables) {
   return {
     GH_REPO: variables?.GH_REPO,
-    GH_TOKEN: variables?.GH_TOKEN
+    GH_TOKEN: variables?.GH_TOKEN,
   };
 }
 
@@ -206,23 +205,29 @@ function githubConfig(variables) {
  */
 function validateContext(context) {
   if (!githubConfig(context.variables).GH_TOKEN) {
-    return { valid: false, error: 'GH_TOKEN variable not set' };
+    return { valid: false, error: "GH_TOKEN variable not set" };
   }
 
   if (!githubConfig(context.variables).GH_REPO) {
-    return { valid: false, error: 'GH_REPO variable not set' };
+    return { valid: false, error: "GH_REPO variable not set" };
   }
 
   if (!context.activity.project) {
-    return { valid: false, error: 'Project ID not available' };
+    return { valid: false, error: "Project ID not available" };
   }
 
-  if (!context.activity.environments || context.activity.environments.length === 0) {
-    return { valid: false, error: 'Environment not available' };
+  if (
+    !context.activity.environments ||
+    context.activity.environments.length === 0
+  ) {
+    return { valid: false, error: "Environment not available" };
   }
 
-  if (context.activity?.payload.environment.status && context.activity.payload.environment.status === 'inactive') {
-    return { valid: false, error: 'Upsun environment is inactive' };
+  if (
+    context.activity?.payload.environment.status &&
+    context.activity.payload.environment.status === "inactive"
+  ) {
+    return { valid: false, error: "Upsun environment is inactive" };
   }
 
   return { valid: true };
@@ -236,15 +241,18 @@ function validateContext(context) {
 function processActivity(context) {
   try {
     // Determine what action to take based on activity type and state
-    if (context.activity.type === 'environment.deactivate' || context.activity.type === 'environment.delete') {
-      if (context.activity.state === 'complete') {
+    if (
+      context.activity.type === "environment.deactivate" ||
+      context.activity.type === "environment.delete"
+    ) {
+      if (context.activity.state === "complete") {
         handleEnvironmentDeactivation(context);
       }
     } else {
       handleEnvironmentDeployment(context);
     }
   } catch (error) {
-    console.log('Error processing activity:', error.message);
+    console.log("Error processing activity:", error.message);
   }
 }
 
@@ -260,14 +268,14 @@ function handleEnvironmentDeactivation(context) {
   // Get the latest deployment for this environment
   const deployment = getLatestDeployment(context);
   if (!deployment) {
-    console.log('No deployment found to deactivate');
+    console.log("No deployment found to deactivate");
     return;
   }
 
   // Mark deployment as inactive
   createDeploymentStatus(context, deployment.id, {
-    state: 'inactive',
-    description: 'Environment closed'
+    state: "inactive",
+    description: "Environment closed",
   });
 
   console.log(`Deployment ${deployment.id} marked as inactive`);
@@ -284,11 +292,11 @@ function handleEnvironmentDeployment(context) {
 
   // If no deployment exists, create one
   if (!deployment) {
-    console.log('No deployment found, creating new deployment');
+    console.log("No deployment found, creating new deployment");
     deployment = createDeployment(context);
 
     if (!deployment) {
-      console.log('Failed to create deployment');
+      console.log("Failed to create deployment");
       return;
     }
   }
@@ -296,7 +304,10 @@ function handleEnvironmentDeployment(context) {
   const status = generateDeploymentStatus(context);
 
   createDeploymentStatus(context, deployment.id, status);
-  console.log(`Updated deployment ${deployment.id} status to: ${status.state}`, JSON.stringify(status, null, 2));
+  console.log(
+    `Updated deployment ${deployment.id} status to: ${status.state}`,
+    JSON.stringify(status, null, 2),
+  );
 }
 
 /**
@@ -313,13 +324,15 @@ function getLatestDeployment(context) {
     /** @type Response|any */
     const response = fetch(url, {
       headers: {
-        'Accept': 'application/vnd.github+json',
-        'Authorization': `Bearer ${githubConfig(context.variables).GH_TOKEN}`,
-        'X-GitHub-Api-Version': GITHUB_API_VERSION
-      }
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${githubConfig(context.variables).GH_TOKEN}`,
+        "X-GitHub-Api-Version": GITHUB_API_VERSION,
+      },
     });
     if (!response.ok) {
-      console.log(`Failed to fetch deployment: ${response.status} ${response.statusText}`);
+      console.log(
+        `Failed to fetch deployment: ${response.status} ${response.statusText}`,
+      );
       return null;
     }
 
@@ -332,7 +345,7 @@ function getLatestDeployment(context) {
 
     return deployments[0];
   } catch (error) {
-    console.log('Error fetching deployment:', error.message);
+    console.log("Error fetching deployment:", error.message);
     return null;
   }
 }
@@ -349,8 +362,8 @@ function createDeployment(context) {
   const url = `${GITHUB_API_BASE}/repos/${repo}/deployments`;
 
   // Determine environment flags from Upsun environment type
-  const upsunEnvType = context.activity.payload?.environment?.type || '';
-  const isProduction = upsunEnvType === 'production';
+  const upsunEnvType = context.activity.payload?.environment?.type || "";
+  const isProduction = upsunEnvType === "production";
 
   // Get the commit SHA from activity payload
   const ref = getCommitRef(context.activity);
@@ -360,36 +373,41 @@ function createDeployment(context) {
     environment: environment,
     production_environment: isProduction,
     auto_merge: false,
-    required_contexts: [] // Bypass status checks
+    required_contexts: [], // Bypass status checks
   };
 
   try {
     /** @type Response|any */
     const response = fetch(url, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Accept': 'application/vnd.github+json',
-        'Authorization': `Bearer ${github.GH_TOKEN}`,
-        'X-GitHub-Api-Version': GITHUB_API_VERSION,
-        'Content-Type': 'application/json'
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${github.GH_TOKEN}`,
+        "X-GitHub-Api-Version": GITHUB_API_VERSION,
+        "Content-Type": "application/json",
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
       const errorText = response.text();
-      console.log(`Failed to create deployment: ${response.status} ${response.statusText}`);
-      console.log('Response:', errorText);
+      console.log(
+        `Failed to create deployment: ${response.status} ${response.statusText}`,
+      );
+      console.log("Response:", errorText);
       return null;
     }
 
     /** @type {GitHubDeployment} */
     const deployment = response.json();
-    console.log(`Created deployment ${deployment.id} for environment: ${environment}`, JSON.stringify(deployment, null, 2));
+    console.log(
+      `Created deployment ${deployment.id} for environment: ${environment}`,
+      JSON.stringify(deployment, null, 2),
+    );
 
     return deployment;
   } catch (error) {
-    console.log('Error creating deployment:', error.message);
+    console.log("Error creating deployment:", error.message);
     return null;
   }
 }
@@ -409,26 +427,28 @@ function createDeploymentStatus(context, deploymentId, status) {
   try {
     /** @type Response|any */
     const response = fetch(url, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Accept': 'application/vnd.github+json',
-        'Authorization': `Bearer ${github.GH_TOKEN}`,
-        'X-GitHub-Api-Version': GITHUB_API_VERSION,
-        'Content-Type': 'application/json'
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${github.GH_TOKEN}`,
+        "X-GitHub-Api-Version": GITHUB_API_VERSION,
+        "Content-Type": "application/json",
       },
-      body: JSON.stringify(status)
+      body: JSON.stringify(status),
     });
 
     if (!response.ok) {
       const errorText = response.text();
-      console.log(`Failed to create deployment status: ${response.status} ${response.statusText}`);
-      console.log('Response:', errorText);
+      console.log(
+        `Failed to create deployment status: ${response.status} ${response.statusText}`,
+      );
+      console.log("Response:", errorText);
       return false;
     }
 
     return true;
   } catch (error) {
-    console.log('Error creating deployment status:', error.message);
+    console.log("Error creating deployment status:", error.message);
     return false;
   }
 }
@@ -442,46 +462,46 @@ function generateDeploymentStatus(context) {
   const logUrl = getLogUrl(context);
 
   // Activity is pending/starting
-  if (context.activity.state === 'pending') {
+  if (context.activity.state === "pending") {
     return {
-      state: 'queued',
-      description: 'Deployment queued'
+      state: "queued",
+      description: "Deployment queued",
     };
   }
 
   // Activity is in progress
-  if (context.activity.state === 'in_progress') {
+  if (context.activity.state === "in_progress") {
     return {
-      state: 'in_progress',
-      description: 'Deployment in progress',
-      log_url: logUrl
+      state: "in_progress",
+      description: "Deployment in progress",
+      log_url: logUrl,
     };
   }
 
   // Activity is complete
-  if (context.activity.state === 'complete') {
-    if (context.activity.result === 'success') {
+  if (context.activity.state === "complete") {
+    if (context.activity.result === "success") {
       const environmentUrl = getEnvironmentUrl(context.activity);
       return {
-        state: 'success',
-        description: 'Deployment successful',
+        state: "success",
+        description: "Deployment successful",
         environment_url: environmentUrl,
         log_url: logUrl,
-        auto_inactive: true // Mark previous deployments as inactive
+        auto_inactive: true, // Mark previous deployments as inactive
       };
     } else {
       return {
-        state: 'failure',
-        description: 'Deployment failed',
-        log_url: logUrl
+        state: "failure",
+        description: "Deployment failed",
+        log_url: logUrl,
       };
     }
   }
 
   // Default: queued
   return {
-    state: 'queued',
-    description: 'Deployment queued'
+    state: "queued",
+    description: "Deployment queued",
   };
 }
 
@@ -496,9 +516,8 @@ function getPrimaryRoute(activity) {
     return {};
   }
   return Object.entries(routes).reduce(
-    (primary, [url, route]) =>
-      route.primary ? { route, url } : primary,
-    {}
+    (primary, [url, route]) => (route.primary ? { route, url } : primary),
+    {},
   );
 }
 
@@ -513,12 +532,15 @@ function getEnvironmentUrl(activity) {
   try {
     // Try to get primary route from deployment payload
     const primaryRoute = getPrimaryRoute(activity);
-    if ('url' in primaryRoute) {
+    if ("url" in primaryRoute) {
       return primaryRoute.url;
     }
-    console.log('Unable to determine url for environment', JSON.stringify(activity, null, 2));
+    console.log(
+      "Unable to determine url for environment",
+      JSON.stringify(activity, null, 2),
+    );
   } catch (error) {
-    console.log('Error getting primary route:', error.message);
+    console.log("Error getting primary route:", error.message);
   }
 }
 
@@ -531,8 +553,10 @@ function getLogUrl(context) {
   // The owner slug is not directly available in any of the provided properties
   // so we have to extract it.
   // Separate the first part of the path which contains the slug.
-  const matches = context.project.subscription.subscription_management_uri
-    .match(/\.com\/([^/]+)/);
+  const matches =
+    context.project.subscription.subscription_management_uri.match(
+      /\.com\/([^/]+)/,
+    );
   const ownerSlug = matches[1];
   return `https://console.upsun.com/${ownerSlug}/${context.activity.project}/-/log/${context.activity.id}`;
 }
@@ -545,12 +569,16 @@ function getLogUrl(context) {
 function getCommitRef(activity) {
   try {
     // Try to get from payload
-    if (activity.payload && activity.payload.commits && activity.payload.commits.length > 0) {
+    if (
+      activity.payload &&
+      activity.payload.commits &&
+      activity.payload.commits.length > 0
+    ) {
       // Get the latest commit
       const commits = activity.payload.commits;
       const lastCommit = commits[commits.length - 1];
       // Handle both string and object formats
-      if (typeof lastCommit === 'string') {
+      if (typeof lastCommit === "string") {
         return lastCommit;
       } else if (lastCommit && lastCommit.sha) {
         return lastCommit.sha;
@@ -562,13 +590,12 @@ function getCommitRef(activity) {
       return activity.parameters.new_commit;
     }
   } catch (error) {
-    console.log('Error getting commit ref:', error.message);
+    console.log("Error getting commit ref:", error.message);
   }
 
   // Fallback: use environment name as ref
   return activity.environments[0];
 }
-
 
 // ============================================================================
 // Main Execution
@@ -579,30 +606,41 @@ function getCommitRef(activity) {
  * @returns {void}
  */
 function main(context) {
-  'use strict';
+  "use strict";
 
   // Check if we should process this activity
   if (!shouldProcessActivity(context.activity)) {
-    console.log(`Skipping activity type: ${context.activity.type}, state: ${context.activity.state}`);
+    console.log(
+      `Skipping activity type: ${context.activity.type}, state: ${context.activity.state}`,
+    );
     return;
   }
 
   // Validate required configuration
   const validation = validateContext(context);
   if (!validation.valid) {
-    console.log('Configuration error:', validation.error, JSON.stringify(context, null, 2));
+    console.log(
+      "Configuration error:",
+      validation.error,
+      JSON.stringify(context, null, 2),
+    );
     return;
   }
 
   const environment = context.activity.environments[0];
-  console.log(`Processing activity: ${context.activity.type} (${context.activity.state}) for environment: ${environment}`);
+  console.log(
+    `Processing activity: ${context.activity.type} (${context.activity.state}) for environment: ${environment}`,
+  );
 
   // Process the activity
   processActivity(context);
 }
 
-// @ts-ignore
-console.log('Invoking activity', JSON.stringify({activity, variables, project}, null, 2));
+console.log(
+  "Invoking activity",
+  // @ts-ignore
+  JSON.stringify({ activity, variables, project }, null, 2),
+);
 
 // @ts-ignore
 main({ activity, variables, project });
