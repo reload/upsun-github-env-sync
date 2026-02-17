@@ -24,6 +24,13 @@
 // ============================================================================
 
 /**
+ * @typedef {Object} UpsunContext
+ * @property {UpsunActivity} activity
+ * @property {UpsunVariables} variables
+ * @property {UpsunProject} project
+ */
+
+/**
  * @typedef {Object} UpsunActivity
  * @property {string} id - Unique identifier for the activity
  * @property {string} type - Activity type (e.g., "environment.push")
@@ -103,6 +110,10 @@
 
 /**
  * @typedef {Object.<string, string>} UpsunVariables
+ */
+
+/**
+ * @typedef {Object} UpsunProject
  */
 
 /**
@@ -187,29 +198,28 @@ function githubConfig(variables) {
 }
 
 /**
- * Validate required configuration from activity
- * @param {UpsunActivity} activity - Upsun activity object
- * @param {UpsunVariables} variables - Upsun integration variables object
+ * Validate required configuration from context
+ * @param {UpsunContext} context
  * @returns {{valid: boolean, error?: string}}
  */
-function validateConfiguration(activity, variables) {
-  if (!githubConfig(variables).GH_TOKEN) {
+function validateContext(context) {
+  if (!githubConfig(context.variables).GH_TOKEN) {
     return { valid: false, error: 'GH_TOKEN variable not set' };
   }
 
-  if (!githubConfig(variables).GH_REPO) {
+  if (!githubConfig(context.variables).GH_REPO) {
     return { valid: false, error: 'GH_REPO variable not set' };
   }
 
-  if (!activity.project) {
+  if (!context.activity.project) {
     return { valid: false, error: 'Project ID not available' };
   }
 
-  if (!activity.environments || activity.environments.length === 0) {
+  if (!context.activity.environments || context.activity.environments.length === 0) {
     return { valid: false, error: 'Environment not available' };
   }
 
-  if (activity?.payload.environment.status && activity.payload.environment.status === 'inactive') {
+  if (context.activity?.payload.environment.status && context.activity.payload.environment.status === 'inactive') {
     return { valid: false, error: 'Upsun environment is inactive' };
   }
 
@@ -218,19 +228,18 @@ function validateConfiguration(activity, variables) {
 
 /**
  * Process the activity and update GitHub deployment status
- * @param {UpsunActivity} activity
- * @param {UpsunVariables} variables
+ * @param {UpsunContext} context
  * @returns {void}
  */
-function processActivity(activity, variables) {
+function processActivity(context) {
   try {
     // Determine what action to take based on activity type and state
-    if (activity.type === 'environment.deactivate' || activity.type === 'environment.delete') {
-      if (activity.state === 'complete') {
-        handleEnvironmentDeactivation(activity, variables);
+    if (context.activity.type === 'environment.deactivate' || context.activity.type === 'environment.delete') {
+      if (context.activity.state === 'complete') {
+        handleEnvironmentDeactivation(context);
       }
     } else {
-      handleEnvironmentDeployment(activity, variables);
+      handleEnvironmentDeployment(context);
     }
   } catch (error) {
     console.log('Error processing activity:', error.message);
@@ -239,23 +248,22 @@ function processActivity(activity, variables) {
 
 /**
  * Handle environment deactivation/deletion
- * @param {UpsunActivity} activity
- * @param {UpsunVariables} variables
+ * @param {UpsunContext} context
  * @returns {void}
  */
-function handleEnvironmentDeactivation(activity, variables) {
-  const environment = activity.environments[0];
+function handleEnvironmentDeactivation(context) {
+  const environment = context.activity.environments[0];
   console.log(`Marking deployment as inactive for environment: ${environment}`);
 
   // Get the latest deployment for this environment
-  const deployment = getLatestDeployment(activity, variables);
+  const deployment = getLatestDeployment(context);
   if (!deployment) {
     console.log('No deployment found to deactivate');
     return;
   }
 
   // Mark deployment as inactive
-  createDeploymentStatus(activity, variables, deployment.id, {
+  createDeploymentStatus(context, deployment.id, {
     state: 'inactive',
     description: 'Environment closed'
   });
@@ -265,18 +273,17 @@ function handleEnvironmentDeactivation(activity, variables) {
 
 /**
  * Handle environment deployment (push/activate)
- * @param {UpsunActivity} activity
- * @param {UpsunVariables} variables
+ * @param {UpsunContext} context
  * @returns {void}
  */
-function handleEnvironmentDeployment(activity, variables) {
+function handleEnvironmentDeployment(context) {
   // Get or create deployment
-  let deployment = getLatestDeployment(activity, variables);
+  let deployment = getLatestDeployment(context);
 
   // If no deployment exists, create one
   if (!deployment) {
     console.log('No deployment found, creating new deployment');
-    deployment = createDeployment(activity, variables);
+    deployment = createDeployment(context);
 
     if (!deployment) {
       console.log('Failed to create deployment');
@@ -285,22 +292,21 @@ function handleEnvironmentDeployment(activity, variables) {
   }
 
   // Determine deployment status based on activity state
-  const status = getDeploymentStatus(activity);
+  const status = getDeploymentStatus(context.activity);
 
   // Update deployment status
-  createDeploymentStatus(activity, variables, deployment.id, status);
+  createDeploymentStatus(context, deployment.id, status);
   console.log(`Updated deployment ${deployment.id} status to: ${status.state}`, JSON.stringify(status, null, 2));
 }
 
 /**
  * Get the latest deployment for an environment
- * @param {UpsunActivity} activity
- * @param {UpsunVariables} variables
+ * @param {UpsunContext} context
  * @returns {GitHubDeployment|null}
  */
-function getLatestDeployment(activity, variables) {
-  const repo = githubConfig(variables).GH_REPO;
-  const environment = activity.environments[0];
+function getLatestDeployment(context) {
+  const repo = githubConfig(context.variables).GH_REPO;
+  const environment = context.activity.environments[0];
   const url = `${GITHUB_API_BASE}/repos/${repo}/deployments?environment=${environment}&per_page=1`;
 
   try {
@@ -308,7 +314,7 @@ function getLatestDeployment(activity, variables) {
     const response = fetch(url, {
       headers: {
         'Accept': 'application/vnd.github+json',
-        'Authorization': `Bearer ${githubConfig(variables).GH_TOKEN}`,
+        'Authorization': `Bearer ${githubConfig(context.variables).GH_TOKEN}`,
         'X-GitHub-Api-Version': GITHUB_API_VERSION
       }
     });
@@ -333,22 +339,21 @@ function getLatestDeployment(activity, variables) {
 
 /**
  * Create a new GitHub deployment
- * @param {UpsunActivity} activity
- * @param {UpsunVariables} variables
+ * @param {UpsunContext} context
  * @returns {GitHubDeployment|null}
  */
-function createDeployment(activity, variables) {
-  const github = githubConfig(variables);
+function createDeployment(context) {
+  const github = githubConfig(context.variables);
   const repo = github.GH_REPO;
-  const environment = activity.environments[0];
+  const environment = context.activity.environments[0];
   const url = `${GITHUB_API_BASE}/repos/${repo}/deployments`;
 
   // Determine environment flags from Upsun environment type
-  const upsunEnvType = activity.payload?.environment?.type || '';
+  const upsunEnvType = context.activity.payload?.environment?.type || '';
   const isProduction = upsunEnvType === 'production';
 
   // Get the commit SHA from activity payload
-  const ref = getCommitRef(activity);
+  const ref = getCommitRef(context.activity);
 
   const payload = {
     ref: ref,
@@ -391,14 +396,13 @@ function createDeployment(activity, variables) {
 
 /**
  * Create a deployment status
- * @param {UpsunActivity} activity
- * @param {UpsunVariables} variables
+ * @param {UpsunContext} context
  * @param {number} deploymentId - GitHub deployment ID
  * @param {GitHubDeploymentStatus} status - Deployment status to create
  * @returns {boolean}
  */
-function createDeploymentStatus(activity, variables, deploymentId, status) {
-  const github = githubConfig(variables);
+function createDeploymentStatus(context, deploymentId, status) {
+  const github = githubConfig(context.variables);
   const repo = github.GH_REPO;
   const url = `${GITHUB_API_BASE}/repos/${repo}/deployments/${deploymentId}/statuses`;
 
@@ -556,35 +560,34 @@ function getCommitRef(activity) {
 // ============================================================================
 
 /**
- * @param {UpsunActivity} activity
- * @param {UpsunVariables} variables
+ * @param {UpsunContext} context
  * @returns {void}
  */
-function main(activity, variables) {
+function main(context) {
   'use strict';
 
   // Check if we should process this activity
-  if (!shouldProcessActivity(activity)) {
-    console.log(`Skipping activity type: ${activity.type}, state: ${activity.state}`);
+  if (!shouldProcessActivity(context.activity)) {
+    console.log(`Skipping activity type: ${context.activity.type}, state: ${context.activity.state}`);
     return;
   }
 
   // Validate required configuration
-  const validation = validateConfiguration(activity, variables);
+  const validation = validateContext(context);
   if (!validation.valid) {
-    console.log('Configuration error:', validation.error, JSON.stringify(activity, null, 2));
+    console.log('Configuration error:', validation.error, JSON.stringify(context, null, 2));
     return;
   }
 
-  const environment = activity.environments[0];
-  console.log(`Processing activity: ${activity.type} (${activity.state}) for environment: ${environment}`);
+  const environment = context.activity.environments[0];
+  console.log(`Processing activity: ${context.activity.type} (${context.activity.state}) for environment: ${environment}`);
 
   // Process the activity
-  processActivity(activity, variables);
+  processActivity(context);
 }
 
 // @ts-ignore
 console.log('Invoking activity', JSON.stringify({activity, variables, project}, null, 2));
 
 // @ts-ignore
-main(activity, variables);
+main({ activity, variables, project });
