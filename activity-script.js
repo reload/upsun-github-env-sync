@@ -237,20 +237,16 @@ function validateContext(context) {
  * @returns {void}
  */
 function processActivity(context) {
-  try {
-    // Determine what action to take based on activity type and state
-    if (
-      context.activity.type === "environment.deactivate" ||
-      context.activity.type === "environment.delete"
-    ) {
-      if (context.activity.state === "complete") {
-        handleEnvironmentDeactivation(context);
-      }
-    } else {
-      handleEnvironmentDeployment(context);
+  // Determine what action to take based on activity type and state
+  if (
+    context.activity.type === "environment.deactivate" ||
+    context.activity.type === "environment.delete"
+  ) {
+    if (context.activity.state === "complete") {
+      handleEnvironmentDeactivation(context);
     }
-  } catch (error) {
-    console.log("Error processing activity:", error.message);
+  } else {
+    handleEnvironmentDeployment(context);
   }
 }
 
@@ -618,15 +614,11 @@ function main(context) {
   // Validate required configuration
   const validation = validateContext(context);
   if (!validation.valid) {
-    console.log(
-      "Configuration error:",
-      validation.error,
-      JSON.stringify(context, null, 2),
+    throw Error(
+      `Configuration error: ${validation.error} ${JSON.stringify(context, null, 2)}`,
     );
-    return;
   }
 
-  const environment = context.activity.environments[0];
   console.log(
     `Processing activity: ${context.activity.type} (${context.activity.state}) for environment: ${environment}`,
   );
