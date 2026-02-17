@@ -584,7 +584,7 @@ function main(activity, variables) {
 }
 
 // @ts-ignore
-console.log('Invoking activity', JSON.stringify({activity, variables}, null, 2));
+console.log('Invoking activity', JSON.stringify({activity, variables, project}, null, 2));
 
 // @ts-ignore
 main(activity, variables);
