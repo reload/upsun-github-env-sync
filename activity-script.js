@@ -182,7 +182,12 @@ function shouldProcessActivity(activity) {
     "environment.delete",
   ];
 
-  return supportedTypes.includes(activity.type);
+  const supportedType = supportedTypes.includes(activity.type);
+  const environmentInactive =
+    activity?.payload.environment.status &&
+    activity.payload.environment.status === "inactive";
+
+  return supportedType && !environmentInactive;
 }
 
 /**
@@ -221,13 +226,6 @@ function validateContext(context) {
     context.activity.environments.length === 0
   ) {
     return { valid: false, error: "Environment not available" };
-  }
-
-  if (
-    context.activity?.payload.environment.status &&
-    context.activity.payload.environment.status === "inactive"
-  ) {
-    return { valid: false, error: "Upsun environment is inactive" };
   }
 
   return { valid: true };
@@ -608,10 +606,11 @@ function getCommitRef(activity) {
 function main(context) {
   "use strict";
 
+  const environment = context.activity.environments[0];
   // Check if we should process this activity
   if (!shouldProcessActivity(context.activity)) {
     console.log(
-      `Skipping activity type: ${context.activity.type}, state: ${context.activity.state}`,
+      `Skipping activity type: ${context.activity.type}, state: ${context.activity.state} for environment ${environment}, state ${context.activity.payload.environment.status}`,
     );
     return;
   }
