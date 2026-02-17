@@ -627,11 +627,5 @@ function main(context) {
   processActivity(context);
 }
 
-console.log(
-  "Invoking activity",
-  // @ts-ignore
-  JSON.stringify({ activity, variables, project }, null, 2),
-);
-
 // @ts-ignore
 main({ activity, variables, project });
