@@ -25,9 +25,9 @@
 
 /**
  * @typedef {Object} UpsunContext
- * @property {UpsunActivity} activity
- * @property {UpsunVariables} variables
- * @property {UpsunProject} project
+ * @property {UpsunActivity} activity - Activity payload object for the triggering event.
+ * @property {UpsunVariables} variables - Variables exposed to the script execution context.
+ * @property {UpsunProject} project - Project metadata available to the activity script.
  */
 
 /**
@@ -38,20 +38,17 @@
  * @property {string} [result] - Activity result: "success" | "failure" (only when state is "complete")
  * @property {string} project - Project ID
  * @property {string[]} environments - Array of environment names affected by this activity
- * @property {string} [variables.PLATFORM_ROUTES] - Base64 encoded JSON of platform routes
  * @property {UpsunActivityPayload} [payload] - Detailed activity information
  * @property {UpsunActivityParameters} [parameters] - Activity parameters
  */
 
 /**
- * Upsun environment object from activity payload
  * @typedef {Object} UpsunEnvironment
  * @property {string} id - Environment identifier
  * @property {string} name - The environment name
  * @property {string} machine_name - Machine-readable environment name
  * @property {string} type - The environment type (e.g., "production", "development")
  * @property {string} head_commit - The ID of the environment's latest Git commit
- * @property {string} edge_hostname - The URL you should target when setting up a custom domain
  * @property {boolean} is_main - Whether this is the main environment
  * @property {boolean} is_pr - Whether this is a PR environment
  * @property {string} status - Whether the environment is active or not
@@ -70,23 +67,15 @@
 
 /**
  * @typedef {Object} UpsunRoute
- * @property {string} [id] - Route ID
+ * @property {string} id - Route ID
  * @property {boolean} primary - Whether this is the primary route
  * @property {string} type - Route type ("upstream" | "redirect")
- * @property {string} [production_url] - Production URL
- */
-
-/**
- * @typedef {Object} UpsunVariable
- * @property {string} name - Variable name
- * @property {string} [value] - Value (if not sensitive)
  */
 
 /**
  * @typedef {Object} UpsunDeployment
  * @property {string} id - Deployment ID
  * @property {Object.<string, UpsunRoute>} routes - All the URLs connected to the environment (includes redirects; filter by type="upstream" to exclude redirects)
- * @property {UpsunVariable[]} [variables] - All the variables for the environment
  */
 
 /**
