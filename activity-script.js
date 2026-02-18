@@ -14,7 +14,7 @@
  *
  * Required project variables:
  * - GH_TOKEN: GitHub personal access token with repo:deployments scope
- * - GH_REPO: GitHub repository in format "owner/repo" (optional, auto-detected from git)
+ * - GH_REPO: GitHub repository in format "owner/repo"
  *
  * @file
  */
