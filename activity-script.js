@@ -285,12 +285,7 @@ function handleEnvironmentDeployment(context) {
   }
 
   const status = generateDeploymentStatus(context);
-
   createDeploymentStatus(context, deployment.id, status);
-  console.log(
-    `Updated deployment ${deployment.id} status to: ${status.state}`,
-    JSON.stringify(status, null, 2),
-  );
 }
 
 /**
@@ -411,6 +406,10 @@ function createDeploymentStatus(context, deploymentId, status) {
       return false;
     }
 
+    console.log(
+      `Updated deployment ${deployment.id} status to: ${status.state}`,
+      JSON.stringify(status, null, 2),
+    );
     return true;
   } catch (error) {
     console.log("Error creating deployment status:", error.message);
