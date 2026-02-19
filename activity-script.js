@@ -282,11 +282,6 @@ function handleEnvironmentDeployment(context) {
   if (!deployment) {
     console.log("No deployment found, creating new deployment");
     deployment = createDeployment(context);
-
-    if (!deployment) {
-      console.log("Failed to create deployment");
-      return;
-    }
   }
 
   const status = generateDeploymentStatus(context);
