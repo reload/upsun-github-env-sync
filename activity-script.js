@@ -31,6 +31,13 @@
  */
 
 /**
+ * @typedef {UpsunContext & {
+ *   variables: UpsunValidatedVariables
+ *   activity: UpsunValidatedActivity
+ * }} UpsunValidatedContext
+ */
+
+/**
  * @typedef {Object} UpsunActivity
  * @property {string} id - Unique identifier for the activity
  * @property {string} type - Activity type (e.g., "environment.push")
@@ -40,6 +47,13 @@
  * @property {string[]} environments - Array of environment names affected by this activity
  * @property {UpsunActivityPayload} [payload] - Detailed activity information
  * @property {UpsunActivityParameters} [parameters] - Activity parameters
+ */
+
+/**
+ * @typedef {UpsunActivity & {
+ *   project: string
+ *   environments: [string, ...string[]]
+ * }} UpsunValidatedActivity
  */
 
 /**
@@ -99,6 +113,13 @@
 
 /**
  * @typedef {Object.<string, string>} UpsunVariables
+ */
+
+/**
+ * @typedef { UpsunVariables & {
+ *   GH_TOKEN: string,
+ *   GH_REPO: string
+ * }} UpsunValidatedVariables
  */
 
 /**
@@ -173,56 +194,40 @@ function shouldProcessActivity(activity) {
 
   const supportedType = supportedTypes.includes(activity.type);
   const environmentInactive =
-    activity?.payload.environment.status &&
-    activity.payload.environment.status === "inactive";
+    activity?.payload?.environment?.status === "inactive";
 
   return supportedType && !environmentInactive;
 }
 
 /**
- * Parse GitHub configuration from the current activity.
- *
- * @param {UpsunVariables} variables
- * @return {{GH_REPO: string?, GH_TOKEN: string?}}
- */
-function githubConfig(variables) {
-  return {
-    GH_REPO: variables?.GH_REPO,
-    GH_TOKEN: variables?.GH_TOKEN,
-  };
-}
-
-/**
  * Validate required configuration from context
  * @param {UpsunContext} context
- * @returns {{valid: boolean, error?: string}}
+ * @returns {asserts context is UpsunValidatedContext}
  */
 function validateContext(context) {
-  if (!githubConfig(context.variables).GH_TOKEN) {
-    return { valid: false, error: "GH_TOKEN variable not set" };
+  if (!context.variables?.GH_TOKEN) {
+    throw new Error("GH_TOKEN variable not set");
   }
 
-  if (!githubConfig(context.variables).GH_REPO) {
-    return { valid: false, error: "GH_REPO variable not set" };
+  if (!context.variables?.GH_TOKEN) {
+    throw new Error("GH_REPO variable not set");
   }
 
   if (!context.activity.project) {
-    return { valid: false, error: "Project ID not available" };
+    throw new Error("Project ID not available");
   }
 
   if (
     !context.activity.environments ||
     context.activity.environments.length === 0
   ) {
-    return { valid: false, error: "Environment not available" };
+    throw new Error("Environment not available");
   }
-
-  return { valid: true };
 }
 
 /**
  * Process the activity and update GitHub deployment status
- * @param {UpsunContext} context
+ * @param {UpsunValidatedContext} context
  * @returns {void}
  */
 function processActivity(context) {
@@ -241,7 +246,7 @@ function processActivity(context) {
 
 /**
  * Handle environment deactivation/deletion
- * @param {UpsunContext} context
+ * @param {UpsunValidatedContext} context
  * @returns {void}
  */
 function handleEnvironmentDeactivation(context) {
@@ -266,7 +271,7 @@ function handleEnvironmentDeactivation(context) {
 
 /**
  * Handle environment deployment (push/activate)
- * @param {UpsunContext} context
+ * @param {UpsunValidatedContext} context
  * @returns {void}
  */
 function handleEnvironmentDeployment(context) {
@@ -295,20 +300,19 @@ function handleEnvironmentDeployment(context) {
 
 /**
  * Get the latest deployment for an environment
- * @param {UpsunContext} context
- * @returns {GitHubDeployment|null}
+ * @param {UpsunValidatedContext} context
+ * @returns {GitHubDeployment|undefined}
  */
 function getLatestDeployment(context) {
-  const repo = githubConfig(context.variables).GH_REPO;
   const environment = context.activity.environments[0];
-  const url = `${GITHUB_API_BASE}/repos/${repo}/deployments?environment=${environment}&per_page=1`;
+  const url = `${GITHUB_API_BASE}/repos/${context.variables.GH_REPO}/deployments?environment=${environment}&per_page=1`;
 
   try {
     /** @type Response|any */
     const response = fetch(url, {
       headers: {
         Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${githubConfig(context.variables).GH_TOKEN}`,
+        Authorization: `Bearer ${context.variables.GH_TOKEN}`,
         "X-GitHub-Api-Version": GITHUB_API_VERSION,
       },
     });
@@ -316,33 +320,26 @@ function getLatestDeployment(context) {
       console.log(
         `Failed to fetch deployment: ${response.status} ${response.statusText}`,
       );
-      return null;
+      return;
     }
 
     /** @type {GitHubDeploymentsResponse} */
     const deployments = response.json();
-
-    if (deployments.length === 0) {
-      return null;
-    }
-
-    return deployments[0];
+    return deployments.shift();
   } catch (error) {
     console.log("Error fetching deployment:", error.message);
-    return null;
+    return;
   }
 }
 
 /**
  * Create a new GitHub deployment
- * @param {UpsunContext} context
- * @returns {GitHubDeployment|null}
+ * @param {UpsunValidatedContext} context
+ * @returns {GitHubDeployment}
  */
 function createDeployment(context) {
-  const github = githubConfig(context.variables);
-  const repo = github.GH_REPO;
   const environment = context.activity.environments[0];
-  const url = `${GITHUB_API_BASE}/repos/${repo}/deployments`;
+  const url = `${GITHUB_API_BASE}/repos/${context.variables.GH_REPO}/deployments`;
 
   // Determine environment flags from Upsun environment type
   const upsunEnvType = context.activity.payload?.environment?.type || "";
@@ -359,53 +356,43 @@ function createDeployment(context) {
     required_contexts: [], // Bypass status checks
   };
 
-  try {
-    /** @type Response|any */
-    const response = fetch(url, {
-      method: "POST",
-      headers: {
-        Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${github.GH_TOKEN}`,
-        "X-GitHub-Api-Version": GITHUB_API_VERSION,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
+  /** @type Response|any */
+  const response = fetch(url, {
+    method: "POST",
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${context.variables.GH_TOKEN}`,
+      "X-GitHub-Api-Version": GITHUB_API_VERSION,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
 
-    if (!response.ok) {
-      const errorText = response.text();
-      console.log(
-        `Failed to create deployment: ${response.status} ${response.statusText}`,
-      );
-      console.log("Response:", errorText);
-      return null;
-    }
-
-    /** @type {GitHubDeployment} */
-    const deployment = response.json();
-    console.log(
-      `Created deployment ${deployment.id} for environment: ${environment}`,
-      JSON.stringify(deployment, null, 2),
+  if (!response.ok) {
+    throw Error(
+      `Failed to create deployment ${JSON.stringify(payload, null, 2)}: ${response.status} ${response.statusText}: ${response.text()}`,
     );
-
-    return deployment;
-  } catch (error) {
-    console.log("Error creating deployment:", error.message);
-    return null;
   }
+
+  /** @type {GitHubDeployment} */
+  const deployment = response.json();
+  console.log(
+    `Created deployment ${deployment.id} for environment: ${environment}`,
+    JSON.stringify(deployment, null, 2),
+  );
+
+  return deployment;
 }
 
 /**
  * Create a deployment status
- * @param {UpsunContext} context
+ * @param {UpsunValidatedContext} context
  * @param {number} deploymentId - GitHub deployment ID
  * @param {GitHubDeploymentStatus} status - Deployment status to create
  * @returns {boolean}
  */
 function createDeploymentStatus(context, deploymentId, status) {
-  const github = githubConfig(context.variables);
-  const repo = github.GH_REPO;
-  const url = `${GITHUB_API_BASE}/repos/${repo}/deployments/${deploymentId}/statuses`;
+  const url = `${GITHUB_API_BASE}/repos/${context.variables.GH_REPO}/deployments/${deploymentId}/statuses`;
 
   try {
     /** @type Response|any */
@@ -413,7 +400,7 @@ function createDeploymentStatus(context, deploymentId, status) {
       method: "POST",
       headers: {
         Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${github.GH_TOKEN}`,
+        Authorization: `Bearer ${context.variables.GH_TOKEN}`,
         "X-GitHub-Api-Version": GITHUB_API_VERSION,
         "Content-Type": "application/json",
       },
@@ -438,7 +425,7 @@ function createDeploymentStatus(context, deploymentId, status) {
 
 /**
  * Generate deployment status based on activity state and result
- * @param {UpsunContext} context
+ * @param {UpsunValidatedContext} context
  * @returns {GitHubDeploymentStatus}
  */
 function generateDeploymentStatus(context) {
@@ -507,11 +494,9 @@ function getPrimaryRoute(activity) {
 /**
  * Get the environment URL from Upsun routes
  * @param {UpsunActivity} activity - Upsun activity object
- * @returns {string?}
+ * @returns {string|undefined}
  */
 function getEnvironmentUrl(activity) {
-  const environment = activity.environments[0];
-
   try {
     // Try to get primary route from deployment payload
     const primaryRoute = getPrimaryRoute(activity);
@@ -525,19 +510,21 @@ function getEnvironmentUrl(activity) {
   } catch (error) {
     console.log("Error getting primary route:", error.message);
   }
+
+  return undefined;
 }
 
 /**
  * Get the log url from an activity.
- * @param {UpsunContext} context
- * @return {string?}
+ * @param {UpsunValidatedContext} context
+ * @return {string|undefined}
  */
 function getLogUrl(context) {
   // The owner slug is not directly available in any of the provided properties
   // so we have to extract it.
   // Separate the first part of the path which contains the slug.
   const subscriptionManagementUri =
-    context?.project?.subscription?.subscription_management_uri;
+    context.project.subscription.subscription_management_uri;
   const matches = subscriptionManagementUri?.match(/\.com\/([^/]+)/);
 
   if (!matches?.[1]) {
@@ -545,7 +532,7 @@ function getLogUrl(context) {
       "Unable to determine Upsun owner organization from subscription_management_uri",
       subscriptionManagementUri,
     );
-    return;
+    return undefined;
   }
 
   const ownerSlug = matches[1];
@@ -554,7 +541,7 @@ function getLogUrl(context) {
 
 /**
  * Get commit reference from activity payload
- * @param {UpsunActivity} activity - Upsun activity object
+ * @param {UpsunValidatedActivity} activity - Upsun activity object
  * @returns {string}
  */
 function getCommitRef(activity) {
@@ -599,28 +586,22 @@ function getCommitRef(activity) {
 function main(context) {
   "use strict";
 
-  const environment = context.activity.environments[0];
-  // Check if we should process this activity
+  const environment = context.activity.environments[0] || "unknown";
+  const environmentStatus =
+    context.activity.payload?.environment?.status || "unknown";
+
   if (!shouldProcessActivity(context.activity)) {
     console.log(
-      `Skipping activity type: ${context.activity.type}, state: ${context.activity.state} for environment ${environment}, state ${context.activity.payload.environment.status}`,
+      `Skipping activity type: ${context.activity.type}, state: ${context.activity.state} for environment ${environment}, state ${environmentStatus}`,
     );
     return;
   }
 
-  // Validate required configuration
-  const validation = validateContext(context);
-  if (!validation.valid) {
-    throw Error(
-      `Configuration error: ${validation.error} ${JSON.stringify(context, null, 2)}`,
-    );
-  }
+  validateContext(context);
 
   console.log(
     `Processing activity: ${context.activity.type} (${context.activity.state}) for environment: ${environment}`,
   );
-
-  // Process the activity
   processActivity(context);
 }
 
