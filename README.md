@@ -105,7 +105,7 @@ upsun integration:activity:log INTEGRATION_ID ACTIVITY_ID
 # After editing activity-script.js
 
 # 1. Validate the changes
-npm run activity-script:validate
+npm run activity-script:lint
 
 # 2. Update the integration
 upsun integration:update \
