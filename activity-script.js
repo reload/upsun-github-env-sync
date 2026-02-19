@@ -359,8 +359,16 @@ function createDeployment(context) {
   });
 
   if (!response.ok) {
-    throw Error(
-      `Failed to create deployment ${JSON.stringify(payload, null, 2)}: ${response.status} ${response.statusText}: ${response.text()}`,
+    throw new Error(
+      JSON.stringify(
+        {
+          message: `Failed to create deployment: ${response.status} ${response.statusText}`,
+          status: payload,
+          response: response.json(),
+        },
+        null,
+        2,
+      ),
     );
   }
 
@@ -379,42 +387,40 @@ function createDeployment(context) {
  * @param {UpsunValidatedContext} context
  * @param {number} deploymentId - GitHub deployment ID
  * @param {GitHubDeploymentStatus} status - Deployment status to create
- * @returns {boolean}
  */
 function createDeploymentStatus(context, deploymentId, status) {
   const url = `${GITHUB_API_BASE}/repos/${context.variables.GH_REPO}/deployments/${deploymentId}/statuses`;
 
-  try {
-    /** @type Response|any */
-    const response = fetch(url, {
-      method: "POST",
-      headers: {
-        Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${context.variables.GH_TOKEN}`,
-        "X-GitHub-Api-Version": GITHUB_API_VERSION,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(status),
-    });
+  /** @type Response|any */
+  const response = fetch(url, {
+    method: "POST",
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${context.variables.GH_TOKEN}`,
+      "X-GitHub-Api-Version": GITHUB_API_VERSION,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(status),
+  });
 
-    if (!response.ok) {
-      const errorText = response.text();
-      console.log(
-        `Failed to create deployment status: ${response.status} ${response.statusText}`,
-      );
-      console.log("Response:", errorText);
-      return false;
-    }
-
-    console.log(
-      `Updated deployment ${deployment.id} status to: ${status.state}`,
-      JSON.stringify(status, null, 2),
+  if (!response.ok) {
+    throw new Error(
+      JSON.stringify(
+        {
+          message: `Failed to create deployment status : ${response.status} ${response.statusText}`,
+          status: status,
+          response: response.json(),
+        },
+        null,
+        2,
+      ),
     );
-    return true;
-  } catch (error) {
-    console.log("Error creating deployment status:", error.message);
-    return false;
   }
+
+  console.log(
+    `Updated deployment ${deploymentId} status to: ${status.state}`,
+    JSON.stringify(status, null, 2),
+  );
 }
 
 /**
