@@ -313,7 +313,7 @@ function getLatestDeployment(context) {
     });
     if (!response.ok) {
       console.log(
-        `Failed to fetch deployment: ${response.status} ${response.statusText}`,
+        `Failed to fetch deployment for environment ${environment}: ${response.status} ${response.statusText}`,
       );
       return;
     }
