@@ -1,10 +1,9 @@
 // @ts-check
-import test from "node:test";
-import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import vm from "node:vm";
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const vm = require("node:vm");
 
 /**
  * Reuse typedefs from the activity script to keep tests and runtime in sync.
@@ -23,8 +22,7 @@ import vm from "node:vm";
  * @property {Record<string, unknown> | undefined} body
  */
 
-const testDir = path.dirname(fileURLToPath(import.meta.url));
-const scriptPath = path.join(testDir, "activity-script.js");
+const scriptPath = path.join(__dirname, "activity-script.js");
 const script = fs.readFileSync(scriptPath, "utf8");
 
 /**
