@@ -1,12 +1,86 @@
+// @ts-check
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 
-const scriptPath =
-  ".platform/activity-scripts/upsun-github-env-sync/activity-script.js";
+/**
+ * Reuse typedefs from the activity script to keep tests and runtime in sync.
+ * @typedef {import("./activity-script.js").UpsunActivity} UpsunActivity
+ * @typedef {import("./activity-script.js").UpsunVariables} UpsunVariables
+ * @typedef {import("./activity-script.js").UpsunProject} UpsunProject
+ * @typedef {import("./activity-script.js").UpsunEnvironment} UpsunEnvironment
+ * @typedef {import("./activity-script.js").UpsunActivityPayload["user"]} UpsunUser
+ * @typedef {import("./activity-script.js").UpsunCommit} UpsunCommit
+ */
+
+/**
+ * @typedef {Object} FetchCall
+ * @property {string} url
+ * @property {string} method
+ * @property {Record<string, unknown> | undefined} body
+ */
+
+const testDir = path.dirname(fileURLToPath(import.meta.url));
+const scriptPath = path.join(testDir, "activity-script.js");
 const script = fs.readFileSync(scriptPath, "utf8");
 
+/**
+ * @param {string} name
+ * @param {"production"|"development"} type
+ * @returns {UpsunEnvironment}
+ */
+function createEnvironment(name, type) {
+  return {
+    id: `env-${name}`,
+    name,
+    machine_name: name,
+    type,
+    head_commit: "fixture-sha",
+    is_main: name === "main",
+    is_pr: false,
+    status: "active",
+  };
+}
+
+/**
+ * @returns {UpsunUser}
+ */
+function createUser() {
+  return {
+    id: "user-1",
+    display_name: "Fixture User",
+  };
+}
+
+/**
+ * @param {string} sha
+ * @returns {UpsunCommit}
+ */
+function createCommit(sha) {
+  return {
+    sha,
+    author: {
+      email: "fixture@example.com",
+      name: "Fixture",
+      date: 1735689600,
+    },
+    parents: [],
+    message: "Fixture commit",
+  };
+}
+
+/**
+ * @param {{
+ *   activity: UpsunActivity,
+ *   variables?: UpsunVariables,
+ *   project?: UpsunProject,
+ *   deploymentsResponse?: Array<{ id: number }>
+ * }} params
+ * @returns {FetchCall[]}
+ */
 function runScript({
   activity,
   variables = { GH_TOKEN: "fake-token", GH_REPO: "owner/repo" },
@@ -18,11 +92,19 @@ function runScript({
   },
   deploymentsResponse = [{ id: 12345 }],
 }) {
+  /** @type {FetchCall[]} */
   const calls = [];
 
+  /**
+   * @param {string} url
+   * @param {{ method?: string, body?: string }} [options]
+   * @returns {{ ok: boolean, status: number, statusText: string, json: () => unknown }}
+   */
   const fetch = (url, options = {}) => {
     const method = options.method || "GET";
-    const body = options.body ? JSON.parse(options.body) : undefined;
+    const body = options.body
+      ? /** @type {Record<string, unknown>} */ (JSON.parse(options.body))
+      : undefined;
     calls.push({ url, method, body });
 
     if (url.includes("/deployments?environment=")) {
@@ -83,9 +165,11 @@ test("environment.push complete success updates existing deployment", () => {
       project: "proj123",
       environments: ["main"],
       payload: {
-        environment: { status: "active", type: "production" },
-        commits: [{ sha: "abc123" }],
+        user: createUser(),
+        environment: createEnvironment("main", "production"),
+        commits: [createCommit("abc123")],
         deployment: {
+          id: "deployment-1",
           routes: {
             "https://main.example.com/": {
               id: "route1",
@@ -100,12 +184,17 @@ test("environment.push complete success updates existing deployment", () => {
   });
 
   assert.equal(calls.length, 2);
-  assert.equal(calls[0].method, "GET");
-  assert.match(calls[0].url, /\/deployments\?environment=main&per_page=1$/);
-  assert.equal(calls[1].method, "POST");
-  assert.equal(calls[1].body.state, "success");
-  assert.equal(calls[1].body.environment_url, "https://main.example.com/");
-  assert.equal(calls[1].body.auto_inactive, true);
+  const call0 = calls[0];
+  assert.ok(call0, "expected fetch call at index 0");
+  assert.equal(call0.method, "GET");
+  assert.match(call0.url, /\/deployments\?environment=main&per_page=1$/);
+  const call1 = calls[1];
+  assert.ok(call1, "expected fetch call at index 1");
+  assert.equal(call1.method, "POST");
+  assert.ok(call1.body, "expected fetch body at index 1");
+  assert.equal(call1.body.state, "success");
+  assert.equal(call1.body.environment_url, "https://main.example.com/");
+  assert.equal(call1.body.auto_inactive, true);
 });
 
 test("environment.deactivate complete marks deployment inactive", () => {
@@ -118,15 +207,19 @@ test("environment.deactivate complete marks deployment inactive", () => {
       project: "proj123",
       environments: ["feature-1"],
       payload: {
-        environment: { status: "active", type: "development" },
+        user: createUser(),
+        environment: createEnvironment("feature-1", "development"),
       },
     },
   });
 
   assert.equal(calls.length, 2);
-  assert.equal(calls[1].method, "POST");
-  assert.equal(calls[1].body.state, "inactive");
-  assert.equal(calls[1].body.description, "Environment closed");
+  const call1 = calls[1];
+  assert.ok(call1, "expected fetch call at index 1");
+  assert.equal(call1.method, "POST");
+  assert.ok(call1.body, "expected fetch body at index 1");
+  assert.equal(call1.body.state, "inactive");
+  assert.equal(call1.body.description, "Environment closed");
 });
 
 test("creates deployment when none exists", () => {
@@ -140,19 +233,27 @@ test("creates deployment when none exists", () => {
       project: "proj123",
       environments: ["dev"],
       payload: {
-        environment: { status: "active", type: "development" },
+        user: createUser(),
+        environment: createEnvironment("dev", "development"),
       },
       parameters: { new_commit: "def456" },
     },
   });
 
   assert.equal(calls.length, 3);
-  assert.equal(calls[0].method, "GET");
-  assert.equal(calls[1].method, "POST");
-  assert.match(calls[1].url, /\/deployments$/);
-  assert.equal(calls[1].body.environment, "dev");
-  assert.equal(calls[2].method, "POST");
-  assert.match(calls[2].url, /\/deployments\/67890\/statuses$/);
+  const call0 = calls[0];
+  assert.ok(call0, "expected fetch call at index 0");
+  assert.equal(call0.method, "GET");
+  const call1 = calls[1];
+  assert.ok(call1, "expected fetch call at index 1");
+  assert.equal(call1.method, "POST");
+  assert.match(call1.url, /\/deployments$/);
+  assert.ok(call1.body, "expected fetch body at index 1");
+  assert.equal(call1.body.environment, "dev");
+  const call2 = calls[2];
+  assert.ok(call2, "expected fetch call at index 2");
+  assert.equal(call2.method, "POST");
+  assert.match(call2.url, /\/deployments\/67890\/statuses$/);
 });
 
 test("unsupported activity type is skipped", () => {
@@ -165,7 +266,8 @@ test("unsupported activity type is skipped", () => {
       project: "proj123",
       environments: ["main"],
       payload: {
-        environment: { status: "active", type: "production" },
+        user: createUser(),
+        environment: createEnvironment("main", "production"),
       },
     },
   });
