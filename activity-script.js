@@ -129,6 +129,15 @@
  */
 
 /**
+ * @typedef {Object} UpsunStorage
+ * @see https://docs.upsun.com/integrations/activity.html#storage-api
+ * @property {(key: string) => string | null | undefined} get
+ * @property {(key: string, value: string) => void} set
+ * @property {(key: string) => void} remove
+ * @property {() => void} clear
+ */
+
+/**
  * GitHub Deployment object from the Deployments API
  * @see https://docs.github.com/en/rest/deployments/deployments
  * @typedef {Object} GitHubDeployment
@@ -172,6 +181,12 @@
 
 const GITHUB_API_VERSION = "2022-11-28";
 const GITHUB_API_BASE = "https://api.github.com";
+
+const UPSUN_ACTIVITY_DEPLOYMENT_STORAGE_KEY_PREFIX =
+  "upsun-github-deployment-by-activity";
+/** @type {UpsunStorage} */
+// @ts-ignore Upsun injects this runtime module in activity scripts.
+const storageApi = require("storage");
 
 // ============================================================================
 // Function Declarations
@@ -275,17 +290,112 @@ function handleEnvironmentDeactivation(context) {
  * @returns {void}
  */
 function handleEnvironmentDeployment(context) {
-  // Get or create deployment
-  let deployment = getLatestDeployment(context);
-
-  // If no deployment exists, create one
+  const deployment = resolveDeploymentForActivity(context);
   if (!deployment) {
-    console.log("No deployment found, creating new deployment");
-    deployment = createDeployment(context);
+    console.log(
+      `No deployment found for activity ${context.activity.id} (${context.activity.type})`,
+    );
+    return;
   }
 
   const status = generateDeploymentStatus(context);
   createDeploymentStatus(context, deployment.id, status);
+}
+
+/**
+ * Resolve the GitHub deployment to update for an activity.
+ * For environment.push we create one deployment per Upsun activity and persist
+ * the mapping in Upsun's storage API. Other activity types use the latest
+ * deployment for the environment.
+ * @param {UpsunValidatedContext} context
+ * @returns {GitHubDeployment|undefined}
+ */
+function resolveDeploymentForActivity(context) {
+  if (context.activity.type === "environment.push") {
+    const existingDeploymentId = getStoredDeploymentIdForActivity(
+      context.activity.id,
+    );
+    if (existingDeploymentId) {
+      const existingDeployment = getDeploymentById(
+        context,
+        existingDeploymentId,
+      );
+      console.log(
+        `Reusing deployment ${existingDeployment.id} for activity ${context.activity.id} (${context.activity.type})`,
+        JSON.stringify(existingDeployment, null, 2),
+      );
+      return existingDeployment;
+    } else {
+      const deployment = createDeployment(context);
+      storeDeploymentIdForActivity(context.activity.id, deployment.id);
+      console.log(
+        `Created and mapped deployment ${deployment.id} to activity ${context.activity.id} (${context.activity.type})`,
+        JSON.stringify(deployment, null, 2),
+      );
+      return deployment;
+    }
+  }
+
+  const deployment = getLatestDeployment(context);
+  if (deployment) {
+    console.log(
+      `Retrieved latest deployment ${deployment.id} for activity ${context.activity.id} (${context.activity.type})`,
+      JSON.stringify(deployment, null, 2),
+    );
+    return deployment;
+  }
+  return;
+}
+
+/**
+ * Resolve the storage key for an activity->deployment mapping.
+ * @param {string} activityId
+ * @returns {string}
+ */
+function getActivityDeploymentStorageKey(activityId) {
+  return `${UPSUN_ACTIVITY_DEPLOYMENT_STORAGE_KEY_PREFIX}:${activityId}`;
+}
+
+/**
+ * Load a deployment ID from Upsun storage for an activity.
+ * @param {string} activityId
+ * @returns {number|undefined}
+ */
+function getStoredDeploymentIdForActivity(activityId) {
+  const key = getActivityDeploymentStorageKey(activityId);
+  const value = storageApi.get(key);
+  if (value === null || value === undefined || value === "") {
+    console.log(`No stored deployment id found for activity ${activityId}`);
+    return;
+  }
+
+  const deploymentId = Number.parseInt(String(value), 10);
+  if (!Number.isInteger(deploymentId) || deploymentId <= 0) {
+    console.log(
+      `Ignoring invalid deployment id in storage for activity ${activityId}: ${value}`,
+    );
+    storageApi.remove(key);
+    return;
+  }
+
+  console.log(
+    `Found stored deployment id ${deploymentId} for activity ${activityId}`,
+  );
+  return deploymentId;
+}
+
+/**
+ * Store a deployment ID in Upsun storage for an activity.
+ * @param {string} activityId
+ * @param {number} deploymentId
+ * @returns {void}
+ */
+function storeDeploymentIdForActivity(activityId, deploymentId) {
+  const key = getActivityDeploymentStorageKey(activityId);
+  console.log(
+    `Storing deployment id ${deploymentId} for activity ${activityId}`,
+  );
+  storageApi.set(key, String(deploymentId));
 }
 
 /**
@@ -320,6 +430,34 @@ function getLatestDeployment(context) {
     console.log("Error fetching deployment:", error.message);
     return;
   }
+}
+
+/**
+ * Get a deployment by ID.
+ * @param {UpsunValidatedContext} context
+ * @param {number} deploymentId
+ * @returns {GitHubDeployment}
+ */
+function getDeploymentById(context, deploymentId) {
+  const url = `${GITHUB_API_BASE}/repos/${context.variables.GH_REPO}/deployments/${deploymentId}`;
+
+  /** @type Response|any */
+  const response = fetch(url, {
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${context.variables.GH_TOKEN}`,
+      "X-GitHub-Api-Version": GITHUB_API_VERSION,
+    },
+  });
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch deployment ${deploymentId}: ${response.status} ${response.statusText}`,
+    );
+  }
+
+  /** @type {GitHubDeployment} */
+  const deployment = response.json();
+  return deployment;
 }
 
 /**

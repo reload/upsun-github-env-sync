@@ -13,6 +13,8 @@ const vm = require("node:vm");
  * @typedef {import("./activity-script.js").UpsunEnvironment} UpsunEnvironment
  * @typedef {import("./activity-script.js").UpsunActivityPayload["user"]} UpsunUser
  * @typedef {import("./activity-script.js").UpsunCommit} UpsunCommit
+ * @typedef {import("./activity-script.js").UpsunStorage} UpsunStorage
+ * @typedef {import("./activity-script.js").GitHubDeployment} GitHubDeployment
  */
 
 /**
@@ -71,11 +73,60 @@ function createCommit(sha) {
 }
 
 /**
+ * @param {number} id
+ * @param {string} [environment]
+ * @returns {GitHubDeployment}
+ */
+function createGitHubDeployment(id, environment = "main") {
+  return {
+    url: `https://api.github.com/repos/owner/repo/deployments/${id}`,
+    id,
+    node_id: `DEPLOYMENT_${id}`,
+    sha: "fixture-sha",
+    ref: "fixture-sha",
+    task: "deploy",
+    payload: {},
+    environment,
+    description: null,
+    creator: { login: "fixture-user" },
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    statuses_url: `https://api.github.com/repos/owner/repo/deployments/${id}/statuses`,
+    repository_url: "https://api.github.com/repos/owner/repo",
+    transient_environment: false,
+    production_environment: environment === "main",
+  };
+}
+
+/**
+ * @param {Record<string, string>} [initialValues]
+ * @returns {UpsunStorage}
+ */
+function createStorage(initialValues = {}) {
+  const values = new Map(Object.entries(initialValues));
+
+  return {
+    get: (key) => values.get(key),
+    set: (key, value) => {
+      values.set(key, value);
+    },
+    remove: (key) => {
+      values.delete(key);
+    },
+    clear: () => {
+      values.clear();
+    },
+  };
+}
+
+/**
  * @param {{
  *   activity: UpsunActivity,
  *   variables?: UpsunVariables,
  *   project?: UpsunProject,
- *   deploymentsResponse?: Array<{ id: number }>
+ *   deployments?: GitHubDeployment[]
+ *   createdDeployment?: GitHubDeployment
+ *   storage?: UpsunStorage
  * }} params
  * @returns {FetchCall[]}
  */
@@ -88,7 +139,9 @@ function runScript({
         "https://accounts.upsun.com/my-org/subscriptions/abc",
     },
   },
-  deploymentsResponse = [{ id: 12345 }],
+  deployments = [createGitHubDeployment(12345)],
+  createdDeployment = createGitHubDeployment(67890),
+  storage = createStorage(),
 }) {
   /** @type {FetchCall[]} */
   const calls = [];
@@ -110,7 +163,7 @@ function runScript({
         ok: true,
         status: 200,
         statusText: "OK",
-        json: () => deploymentsResponse,
+        json: () => deployments,
       };
     }
 
@@ -119,7 +172,28 @@ function runScript({
         ok: true,
         status: 201,
         statusText: "Created",
-        json: () => ({ id: 67890 }),
+        json: () => createdDeployment,
+      };
+    }
+
+    if (/\/deployments\/\d+$/.test(url) && method === "GET") {
+      const deploymentId = Number(url.match(/\/deployments\/(\d+)$/)?.[1]);
+      const deployment = deployments.find(
+        (candidate) => candidate.id === deploymentId,
+      );
+      if (!deployment) {
+        return {
+          ok: false,
+          status: 404,
+          statusText: "Not Found",
+          json: () => ({}),
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        json: () => deployment,
       };
     }
 
@@ -145,6 +219,12 @@ function runScript({
     variables,
     project,
     fetch,
+    require: (moduleName) => {
+      if (moduleName === "storage") {
+        return storage;
+      }
+      throw new Error(`Unsupported module: ${moduleName}`);
+    },
     console: {
       log: () => {},
     },
@@ -154,7 +234,9 @@ function runScript({
 }
 
 test("environment.push complete success updates existing deployment", () => {
+  const storage = createStorage();
   const calls = runScript({
+    storage,
     activity: {
       id: "act-1",
       type: "environment.push",
@@ -184,15 +266,22 @@ test("environment.push complete success updates existing deployment", () => {
   assert.equal(calls.length, 2);
   const call0 = calls[0];
   assert.ok(call0, "expected fetch call at index 0");
-  assert.equal(call0.method, "GET");
-  assert.match(call0.url, /\/deployments\?environment=main&per_page=1$/);
+  assert.equal(call0.method, "POST");
+  assert.match(call0.url, /\/deployments$/);
+  assert.ok(call0.body, "expected fetch body at index 0");
+  assert.equal(call0.body.environment, "main");
   const call1 = calls[1];
   assert.ok(call1, "expected fetch call at index 1");
   assert.equal(call1.method, "POST");
+  assert.match(call1.url, /\/deployments\/67890\/statuses$/);
   assert.ok(call1.body, "expected fetch body at index 1");
   assert.equal(call1.body.state, "success");
   assert.equal(call1.body.environment_url, "https://main.example.com/");
   assert.equal(call1.body.auto_inactive, true);
+  assert.equal(
+    storage.get("upsun-github-deployment-by-activity:act-1"),
+    "67890",
+  );
 });
 
 test("environment.deactivate complete marks deployment inactive", () => {
@@ -220,9 +309,8 @@ test("environment.deactivate complete marks deployment inactive", () => {
   assert.equal(call1.body.description, "Environment closed");
 });
 
-test("creates deployment when none exists", () => {
+test("environment.activate uses latest deployment when available", () => {
   const calls = runScript({
-    deploymentsResponse: [],
     activity: {
       id: "act-3",
       type: "environment.activate",
@@ -238,20 +326,99 @@ test("creates deployment when none exists", () => {
     },
   });
 
-  assert.equal(calls.length, 3);
+  assert.equal(calls.length, 2);
   const call0 = calls[0];
   assert.ok(call0, "expected fetch call at index 0");
   assert.equal(call0.method, "GET");
   const call1 = calls[1];
   assert.ok(call1, "expected fetch call at index 1");
   assert.equal(call1.method, "POST");
-  assert.match(call1.url, /\/deployments$/);
+  assert.match(call1.url, /\/deployments\/12345\/statuses$/);
+});
+
+test("environment.activate skips when no latest deployment exists", () => {
+  const calls = runScript({
+    deployments: [],
+    activity: {
+      id: "act-3b",
+      type: "environment.activate",
+      state: "complete",
+      result: "success",
+      project: "proj123",
+      environments: ["dev"],
+      payload: {
+        user: createUser(),
+        environment: createEnvironment("dev", "development"),
+      },
+      parameters: { new_commit: "def456" },
+    },
+  });
+
+  assert.equal(calls.length, 1);
+  const call0 = calls[0];
+  assert.ok(call0, "expected fetch call at index 0");
+  assert.equal(call0.method, "GET");
+  assert.match(call0.url, /\/deployments\?environment=dev&per_page=1$/);
+});
+
+test("environment.push reuses stored deployment id for same activity", () => {
+  const storage = createStorage({
+    "upsun-github-deployment-by-activity:act-5": "777",
+  });
+
+  const calls = runScript({
+    storage,
+    deployments: [createGitHubDeployment(777)],
+    activity: {
+      id: "act-5",
+      type: "environment.push",
+      state: "in_progress",
+      project: "proj123",
+      environments: ["main"],
+      payload: {
+        user: createUser(),
+        environment: createEnvironment("main", "production"),
+      },
+    },
+  });
+
+  assert.equal(calls.length, 2);
+  const call0 = calls[0];
+  assert.ok(call0, "expected fetch call at index 0");
+  assert.equal(call0.method, "GET");
+  assert.match(call0.url, /\/deployments\/777$/);
+  const call1 = calls[1];
+  assert.ok(call1, "expected fetch call at index 1");
+  assert.equal(call1.method, "POST");
+  assert.match(call1.url, /\/deployments\/777\/statuses$/);
   assert.ok(call1.body, "expected fetch body at index 1");
-  assert.equal(call1.body.environment, "dev");
-  const call2 = calls[2];
-  assert.ok(call2, "expected fetch call at index 2");
-  assert.equal(call2.method, "POST");
-  assert.match(call2.url, /\/deployments\/67890\/statuses$/);
+  assert.equal(call1.body.state, "in_progress");
+});
+
+test("environment.push throws when stored deployment id cannot be fetched", () => {
+  const storage = createStorage({
+    "upsun-github-deployment-by-activity:act-6": "888",
+  });
+
+  assert.throws(
+    () =>
+      runScript({
+        storage,
+        deployments: [],
+        activity: {
+          id: "act-6",
+          type: "environment.push",
+          state: "in_progress",
+          project: "proj123",
+          environments: ["main"],
+          payload: {
+            user: createUser(),
+            environment: createEnvironment("main", "production"),
+          },
+        },
+      }),
+    /Failed to fetch deployment 888: 404 Not Found/,
+  );
 });
 
 test("unsupported activity type is skipped", () => {
