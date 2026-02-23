@@ -728,3 +728,33 @@ test("throws when creating deployment status fails", () => {
     /Failed to create deployment status : 500 Internal Server Error/,
   );
 });
+
+test("throws when required GitHub configuration is missing", () => {
+  const activity = createActivity({
+    id: "act-15",
+    type: "environment.push",
+    state: "pending",
+  });
+
+  /** @type {Array<{variables: UpsunVariables, expectedError: RegExp}>} */
+  const cases = [
+    {
+      variables: /** @type {UpsunVariables} */ ({ GH_REPO: "owner/repo" }),
+      expectedError: /GH_TOKEN variable not set/,
+    },
+    {
+      variables: /** @type {UpsunVariables} */ ({ GH_TOKEN: "fake-token" }),
+      expectedError: /GH_REPO variable not set/,
+    },
+  ];
+
+  for (const testCase of cases) {
+    const run = () =>
+      runScript({
+        activity,
+        variables: testCase.variables,
+      });
+
+    assert.throws(run, testCase.expectedError);
+  }
+});
