@@ -343,57 +343,52 @@ function runScript({
 }
 
 test("unsupported activity types are skipped", () => {
-  const calls = runScript({
-    activity: createActivity({
-      id: "act-1",
-      type: "backup.create",
-      state: "complete",
-      result: "success",
-    }),
+  const activity = createActivity({
+    id: "act-1",
+    type: "backup.create",
+    state: "complete",
+    result: "success",
   });
-
+  const calls = runScript({ activity });
   assert.equal(calls.length, 0);
 });
 
 test("inactive environments are skipped", () => {
-  const calls = runScript({
-    activity: createActivity({
-      id: "act-2",
-      type: "environment.push",
-      state: "pending",
-      environmentStatus: "inactive",
-    }),
+  const activity = createActivity({
+    id: "act-2",
+    type: "environment.push",
+    state: "pending",
+    environmentStatus: "inactive",
   });
-
+  const calls = runScript({ activity });
   assert.equal(calls.length, 0);
 });
 
 test("environment.push (pending) creates a deployment when one is not mapped", () => {
   const storage = createStorage();
+  const activity = createActivity({
+    id: "act-3",
+    type: "environment.push",
+    state: "pending",
+  });
   const calls = runScript({
+    activity,
     storage,
     deployments: [],
     createdDeployment: createGitHubDeployment(7001, "main"),
-    activity: createActivity({
-      id: "act-3",
-      type: "environment.push",
-      state: "pending",
-    }),
   });
-
   assert.equal(calls.length, 2);
-  const call0 = calls[0];
-  assert.ok(call0);
-  assert.equal(call0.method, "POST");
-  assert.match(call0.url, /\/deployments$/);
+  const createDeploymentCall = calls[0];
+  assert.ok(createDeploymentCall);
+  assert.equal(createDeploymentCall.method, "POST");
+  assert.match(createDeploymentCall.url, /\/deployments$/);
 
-  const call1 = calls[1];
-  assert.ok(call1);
-  assert.equal(call1.method, "POST");
-  assert.match(call1.url, /\/deployments\/7001\/statuses$/);
-  assert.ok(call1.body);
-  assert.equal(call1.body.state, "queued");
-
+  const createStatusCall = calls[1];
+  assert.ok(createStatusCall);
+  assert.equal(createStatusCall.method, "POST");
+  assert.match(createStatusCall.url, /\/deployments\/7001\/statuses$/);
+  assert.ok(createStatusCall.body);
+  assert.equal(createStatusCall.body.state, "queued");
   assert.equal(
     storage.get("upsun-github-deployment-by-activity:act-3"),
     "7001",
@@ -404,250 +399,303 @@ test("environment.push (in_progress) marks mapped deployment as in progress", ()
   const storage = createStorage({
     "upsun-github-deployment-by-activity:act-4": "777",
   });
-  const calls = runScript({
-    storage,
-    deployments: [createGitHubDeployment(777, "main")],
-    activity: createActivity({
-      id: "act-4",
-      type: "environment.push",
-      state: "in_progress",
-    }),
+  const deployments = [createGitHubDeployment(777, "main")];
+  const activity = createActivity({
+    id: "act-4",
+    type: "environment.push",
+    state: "in_progress",
   });
-
+  const calls = runScript({
+    activity,
+    storage,
+    deployments,
+  });
   assert.equal(calls.length, 2);
-  const call0 = calls[0];
-  assert.ok(call0);
-  assert.equal(call0.method, "GET");
-  assert.match(call0.url, /\/deployments\/777$/);
+  const getDeploymentCall = calls[0];
+  assert.ok(getDeploymentCall);
+  assert.equal(getDeploymentCall.method, "GET");
+  assert.match(getDeploymentCall.url, /\/deployments\/777$/);
 
-  const call1 = calls[1];
-  assert.ok(call1);
-  assert.equal(call1.method, "POST");
-  assert.match(call1.url, /\/deployments\/777\/statuses$/);
-  assert.ok(call1.body);
-  assert.equal(call1.body.state, "in_progress");
+  const createStatusCall = calls[1];
+  assert.ok(createStatusCall);
+  assert.equal(createStatusCall.method, "POST");
+  assert.match(createStatusCall.url, /\/deployments\/777\/statuses$/);
+  assert.ok(createStatusCall.body);
+  assert.equal(createStatusCall.body.state, "in_progress");
 });
 
 test("environment.push (complete) marks mapped deployment as success", () => {
   const storage = createStorage({
     "upsun-github-deployment-by-activity:act-5": "778",
   });
-  const calls = runScript({
-    storage,
-    deployments: [createGitHubDeployment(778, "main")],
-    activity: createActivity({
-      id: "act-5",
-      type: "environment.push",
-      state: "complete",
-      result: "success",
-    }),
+  const deployments = [createGitHubDeployment(778, "main")];
+  const activity = createActivity({
+    id: "act-5",
+    type: "environment.push",
+    state: "complete",
+    result: "success",
   });
-
+  const calls = runScript({
+    activity,
+    storage,
+    deployments,
+  });
   assert.equal(calls.length, 2);
-  const call1 = calls[1];
-  assert.ok(call1);
-  assert.equal(call1.method, "POST");
-  assert.match(call1.url, /\/deployments\/778\/statuses$/);
-  assert.ok(call1.body);
-  assert.equal(call1.body.state, "success");
-  assert.equal(call1.body.auto_inactive, true);
+  const createStatusCall = calls[1];
+  assert.ok(createStatusCall);
+  assert.equal(createStatusCall.method, "POST");
+  assert.match(createStatusCall.url, /\/deployments\/778\/statuses$/);
+  assert.ok(createStatusCall.body);
+  assert.equal(createStatusCall.body.state, "success");
+  assert.equal(createStatusCall.body.auto_inactive, true);
 });
 
 test("adding a domain on complete updates deployment with new domain", () => {
+  const activity = createActivity({
+    id: "act-6",
+    type: "environment.domain.create",
+    state: "complete",
+    result: "success",
+    primaryRouteUrl: "https://new-main.example.com/",
+  });
+  const deployments = [createGitHubDeployment(801, "main")];
+
   const calls = runScript({
-    deployments: [createGitHubDeployment(801, "main")],
-    activity: createActivity({
-      id: "act-6",
-      type: "environment.domain.create",
-      state: "complete",
-      result: "success",
-      primaryRouteUrl: "https://new-main.example.com/",
-    }),
+    activity,
+    deployments,
   });
 
   assert.equal(calls.length, 2);
-  const call0 = calls[0];
-  assert.ok(call0);
-  assert.equal(call0.method, "GET");
-  assert.match(call0.url, /\/deployments\?environment=main&per_page=1$/);
+  const getLatestCall = calls[0];
+  assert.ok(getLatestCall);
+  assert.equal(getLatestCall.method, "GET");
+  assert.match(
+    getLatestCall.url,
+    /\/deployments\?environment=main&per_page=1$/,
+  );
 
-  const call1 = calls[1];
-  assert.ok(call1);
-  assert.equal(call1.method, "POST");
-  assert.match(call1.url, /\/deployments\/801\/statuses$/);
-  assert.ok(call1.body);
-  assert.equal(call1.body.state, "success");
-  assert.equal(call1.body.environment_url, "https://new-main.example.com/");
-  assert.equal(call1.body.auto_inactive, true);
+  const createStatusCall = calls[1];
+  assert.ok(createStatusCall);
+  assert.equal(createStatusCall.method, "POST");
+  assert.match(createStatusCall.url, /\/deployments\/801\/statuses$/);
+  assert.ok(createStatusCall.body);
+  assert.equal(createStatusCall.body.state, "success");
+  assert.equal(
+    createStatusCall.body.environment_url,
+    "https://new-main.example.com/",
+  );
+  assert.equal(createStatusCall.body.auto_inactive, true);
 });
 
 test("removing a domain on complete updates deployment with remaining domain", () => {
+  const activity = createActivity({
+    id: "act-7",
+    type: "environment.domain.delete",
+    state: "complete",
+    result: "success",
+    primaryRouteUrl: "https://main.example.com/",
+  });
+  const deployments = [createGitHubDeployment(802, "main")];
+
   const calls = runScript({
-    deployments: [createGitHubDeployment(802, "main")],
-    activity: createActivity({
-      id: "act-7",
-      type: "environment.domain.delete",
-      state: "complete",
-      result: "success",
-      primaryRouteUrl: "https://main.example.com/",
-    }),
+    activity,
+    deployments,
   });
 
   assert.equal(calls.length, 2);
-  const call0 = calls[0];
-  assert.ok(call0);
-  assert.equal(call0.method, "GET");
-  assert.match(call0.url, /\/deployments\?environment=main&per_page=1$/);
+  const getLatestCall = calls[0];
+  assert.ok(getLatestCall);
+  assert.equal(getLatestCall.method, "GET");
+  assert.match(
+    getLatestCall.url,
+    /\/deployments\?environment=main&per_page=1$/,
+  );
 
-  const call1 = calls[1];
-  assert.ok(call1);
-  assert.equal(call1.method, "POST");
-  assert.match(call1.url, /\/deployments\/802\/statuses$/);
-  assert.ok(call1.body);
-  assert.equal(call1.body.state, "success");
-  assert.equal(call1.body.environment_url, "https://main.example.com/");
-  assert.equal(call1.body.auto_inactive, true);
+  const createStatusCall = calls[1];
+  assert.ok(createStatusCall);
+  assert.equal(createStatusCall.method, "POST");
+  assert.match(createStatusCall.url, /\/deployments\/802\/statuses$/);
+  assert.ok(createStatusCall.body);
+  assert.equal(createStatusCall.body.state, "success");
+  assert.equal(
+    createStatusCall.body.environment_url,
+    "https://main.example.com/",
+  );
+  assert.equal(createStatusCall.body.auto_inactive, true);
 });
 
 test("environment.activate updates an existing deployment", () => {
+  const activity = createActivity({
+    id: "act-8",
+    type: "environment.activate",
+    state: "in_progress",
+  });
+  const deployments = [createGitHubDeployment(803, "main")];
+
   const calls = runScript({
-    deployments: [createGitHubDeployment(803, "main")],
-    activity: createActivity({
-      id: "act-8",
-      type: "environment.activate",
-      state: "in_progress",
-    }),
+    activity,
+    deployments,
   });
 
   assert.equal(calls.length, 2);
-  const call0 = calls[0];
-  assert.ok(call0);
-  assert.equal(call0.method, "GET");
-  assert.match(call0.url, /\/deployments\?environment=main&per_page=1$/);
+  const getLatestCall = calls[0];
+  assert.ok(getLatestCall);
+  assert.equal(getLatestCall.method, "GET");
+  assert.match(
+    getLatestCall.url,
+    /\/deployments\?environment=main&per_page=1$/,
+  );
 
-  const call1 = calls[1];
-  assert.ok(call1);
-  assert.equal(call1.method, "POST");
-  assert.match(call1.url, /\/deployments\/803\/statuses$/);
-  assert.ok(call1.body);
-  assert.equal(call1.body.state, "in_progress");
+  const createStatusCall = calls[1];
+  assert.ok(createStatusCall);
+  assert.equal(createStatusCall.method, "POST");
+  assert.match(createStatusCall.url, /\/deployments\/803\/statuses$/);
+  assert.ok(createStatusCall.body);
+  assert.equal(createStatusCall.body.state, "in_progress");
 });
 
 test("environment.deactivate deactivates the latest deployment", () => {
+  const activity = createActivity({
+    id: "act-9",
+    type: "environment.deactivate",
+    state: "complete",
+    result: "success",
+  });
+  const deployments = [createGitHubDeployment(901, "main")];
+
   const calls = runScript({
-    deployments: [createGitHubDeployment(901, "main")],
-    activity: createActivity({
-      id: "act-9",
-      type: "environment.deactivate",
-      state: "complete",
-      result: "success",
-    }),
+    activity,
+    deployments,
   });
 
   assert.equal(calls.length, 2);
-  const call0 = calls[0];
-  assert.ok(call0);
-  assert.equal(call0.method, "GET");
-  assert.match(call0.url, /\/deployments\?environment=main&per_page=1$/);
+  const getLatestCall = calls[0];
+  assert.ok(getLatestCall);
+  assert.equal(getLatestCall.method, "GET");
+  assert.match(
+    getLatestCall.url,
+    /\/deployments\?environment=main&per_page=1$/,
+  );
 
-  const call1 = calls[1];
-  assert.ok(call1);
-  assert.equal(call1.method, "POST");
-  assert.match(call1.url, /\/deployments\/901\/statuses$/);
-  assert.ok(call1.body);
-  assert.equal(call1.body.state, "inactive");
-  assert.equal(call1.body.description, "Environment closed");
+  const createStatusCall = calls[1];
+  assert.ok(createStatusCall);
+  assert.equal(createStatusCall.method, "POST");
+  assert.match(createStatusCall.url, /\/deployments\/901\/statuses$/);
+  assert.ok(createStatusCall.body);
+  assert.equal(createStatusCall.body.state, "inactive");
+  assert.equal(createStatusCall.body.description, "Environment closed");
 });
 
 test("environment.delete deactivates the latest deployment", () => {
+  const activity = createActivity({
+    id: "act-10",
+    type: "environment.delete",
+    state: "complete",
+    result: "success",
+  });
+  const deployments = [createGitHubDeployment(902, "main")];
+
   const calls = runScript({
-    deployments: [createGitHubDeployment(902, "main")],
-    activity: createActivity({
-      id: "act-10",
-      type: "environment.delete",
-      state: "complete",
-      result: "success",
-    }),
+    activity,
+    deployments,
   });
 
   assert.equal(calls.length, 2);
-  const call0 = calls[0];
-  assert.ok(call0);
-  assert.equal(call0.method, "GET");
-  assert.match(call0.url, /\/deployments\?environment=main&per_page=1$/);
+  const getLatestCall = calls[0];
+  assert.ok(getLatestCall);
+  assert.equal(getLatestCall.method, "GET");
+  assert.match(
+    getLatestCall.url,
+    /\/deployments\?environment=main&per_page=1$/,
+  );
 
-  const call1 = calls[1];
-  assert.ok(call1);
-  assert.equal(call1.method, "POST");
-  assert.match(call1.url, /\/deployments\/902\/statuses$/);
-  assert.ok(call1.body);
-  assert.equal(call1.body.state, "inactive");
-  assert.equal(call1.body.description, "Environment closed");
+  const createStatusCall = calls[1];
+  assert.ok(createStatusCall);
+  assert.equal(createStatusCall.method, "POST");
+  assert.match(createStatusCall.url, /\/deployments\/902\/statuses$/);
+  assert.ok(createStatusCall.body);
+  assert.equal(createStatusCall.body.state, "inactive");
+  assert.equal(createStatusCall.body.description, "Environment closed");
 });
 
 test("throws when mapped deployment id cannot be fetched", () => {
   const storage = createStorage({
     "upsun-github-deployment-by-activity:act-11": "999",
   });
+  const deployments = [];
+  const activity = createActivity({
+    id: "act-11",
+    type: "environment.push",
+    state: "in_progress",
+  });
 
-  assert.throws(
-    () =>
-      runScript({
-        storage,
-        deployments: [],
-        activity: createActivity({
-          id: "act-11",
-          type: "environment.push",
-          state: "in_progress",
-        }),
-      }),
-    /Failed to fetch deployment 999: 404 Not Found/,
-  );
+  const run = () => {
+    return runScript({
+      storage,
+      deployments,
+      activity,
+    });
+  };
+
+  assert.throws(run, /Failed to fetch deployment 999: 404 Not Found/);
 });
 
 test("throws when latest deployment lookup fails", () => {
+  const activity = createActivity({
+    id: "act-12",
+    type: "environment.activate",
+    state: "in_progress",
+  });
+  const deploymentStatus = 500;
+
+  const run = () =>
+    runScript({
+      latestDeploymentStatus: deploymentStatus,
+      activity,
+    });
+
   assert.throws(
-    () =>
-      runScript({
-        latestDeploymentStatus: 500,
-        activity: createActivity({
-          id: "act-12",
-          type: "environment.activate",
-          state: "in_progress",
-        }),
-      }),
+    run,
     /Failed to fetch latest deployment for environment main: 500 Internal Server Error/,
   );
 });
 
 test("throws when creating a deployment fails", () => {
-  assert.throws(
-    () =>
-      runScript({
-        createDeploymentStatus: 500,
-        deployments: [],
-        activity: createActivity({
-          id: "act-13",
-          type: "environment.push",
-          state: "pending",
-        }),
-      }),
-    /Failed to create deployment: 500 Internal Server Error/,
-  );
+  const deployments = [];
+  const createDeploymentStatus = 500;
+  const activity = createActivity({
+    id: "act-13",
+    type: "environment.push",
+    state: "pending",
+  });
+  const run = () =>
+    runScript({
+      createDeploymentStatus,
+      deployments,
+      activity,
+    });
+
+  assert.throws(run, /Failed to create deployment: 500 Internal Server Error/);
 });
 
 test("throws when creating deployment status fails", () => {
+  const deployments = [createGitHubDeployment(804, "main")];
+  const activity = createActivity({
+    id: "act-14",
+    type: "environment.activate",
+    state: "in_progress",
+  });
+  const createStatusStatus = 500;
+
+  const run = () =>
+    runScript({
+      createStatusStatus,
+      deployments,
+      activity,
+    });
+
   assert.throws(
-    () =>
-      runScript({
-        createStatusStatus: 500,
-        deployments: [createGitHubDeployment(804, "main")],
-        activity: createActivity({
-          id: "act-14",
-          type: "environment.activate",
-          state: "in_progress",
-        }),
-      }),
+    run,
     /Failed to create deployment status : 500 Internal Server Error/,
   );
 });
