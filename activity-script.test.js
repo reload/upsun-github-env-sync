@@ -450,6 +450,35 @@ test("environment.push (complete) marks mapped deployment as success", () => {
   assert.equal(createStatusCall.body.auto_inactive, true);
 });
 
+test("environment.push (complete failure) marks mapped deployment as failure", () => {
+  const storage = createStorage({
+    "upsun-github-deployment-by-activity:act-5b": "779",
+  });
+  const deployments = [createGitHubDeployment(779, "main")];
+  const activity = createActivity({
+    id: "act-5b",
+    type: "environment.push",
+    state: "complete",
+    result: "failure",
+  });
+
+  const calls = runScript({
+    activity,
+    storage,
+    deployments,
+  });
+
+  assert.equal(calls.length, 2);
+  const createStatusCall = calls[1];
+  assert.ok(createStatusCall);
+  assert.equal(createStatusCall.method, "POST");
+  assert.match(createStatusCall.url, /\/deployments\/779\/statuses$/);
+  assert.ok(createStatusCall.body);
+  assert.equal(createStatusCall.body.state, "failure");
+  assert.equal(createStatusCall.body.description, "Deployment failed");
+  assert.equal(createStatusCall.body.auto_inactive, undefined);
+});
+
 test("adding a domain on complete updates deployment with new domain", () => {
   const activity = createActivity({
     id: "act-6",
