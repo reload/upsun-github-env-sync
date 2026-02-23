@@ -209,7 +209,7 @@ function validateContext(context) {
     throw new Error("GH_TOKEN variable not set");
   }
 
-  if (!context.variables?.GH_TOKEN) {
+  if (!context.variables?.GH_REPO) {
     throw new Error("GH_REPO variable not set");
   }
 
