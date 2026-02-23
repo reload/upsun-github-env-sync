@@ -15,6 +15,7 @@ const vm = require("node:vm");
  * @typedef {import("./activity-script.js").UpsunCommit} UpsunCommit
  * @typedef {import("./activity-script.js").UpsunStorage} UpsunStorage
  * @typedef {import("./activity-script.js").GitHubDeployment} GitHubDeployment
+ * @typedef {import("./activity-script.js").GitHubDeploymentStatus} GitHubDeploymentStatus
  */
 
 /**
@@ -30,9 +31,10 @@ const script = fs.readFileSync(scriptPath, "utf8");
 /**
  * @param {string} name
  * @param {"production"|"development"} type
+ * @param {"active"|"inactive"} [status]
  * @returns {UpsunEnvironment}
  */
-function createEnvironment(name, type) {
+function createEnvironment(name, type, status = "active") {
   return {
     id: `env-${name}`,
     name,
@@ -41,7 +43,7 @@ function createEnvironment(name, type) {
     head_commit: "fixture-sha",
     is_main: name === "main",
     is_pr: false,
-    status: "active",
+    status,
   };
 }
 
@@ -99,6 +101,17 @@ function createGitHubDeployment(id, environment = "main") {
 }
 
 /**
+ * @param {GitHubDeploymentStatus["state"]} [state]
+ * @returns {GitHubDeploymentStatus}
+ */
+function createGitHubDeploymentStatus(state = "queued") {
+  return {
+    state,
+    description: "Fixture deployment status",
+  };
+}
+
+/**
  * @param {Record<string, string>} [initialValues]
  * @returns {UpsunStorage}
  */
@@ -120,12 +133,98 @@ function createStorage(initialValues = {}) {
 }
 
 /**
+ * @param {number} status
+ * @returns {string}
+ */
+function getStatusText(status) {
+  if (status === 200) {
+    return "OK";
+  }
+  if (status === 201) {
+    return "Created";
+  }
+  if (status === 404) {
+    return "Not Found";
+  }
+  if (status === 500) {
+    return "Internal Server Error";
+  }
+  return "Unknown";
+}
+
+/**
+ * @param {{
+ *   id: string,
+ *   type: string,
+ *   state: string,
+ *   result?: string,
+ *   environment?: string,
+ *   environmentType?: "production"|"development",
+ *   environmentStatus?: "active"|"inactive",
+ *   includeDeploymentRoutes?: boolean,
+ *   primaryRouteUrl?: string
+ * }} options
+ * @returns {UpsunActivity}
+ */
+function createActivity({
+  id,
+  type,
+  state,
+  result,
+  environment = "main",
+  environmentType = "production",
+  environmentStatus = "active",
+  primaryRouteUrl,
+}) {
+  /** @type {UpsunActivity} */
+  const activity = {
+    id,
+    type,
+    state,
+    result,
+    project: "proj123",
+    environments: [environment],
+    payload: {
+      user: createUser(),
+      environment: createEnvironment(
+        environment,
+        environmentType,
+        environmentStatus,
+      ),
+      commits: [createCommit("abc123")],
+    },
+    parameters: { new_commit: "abc123" },
+  };
+
+  if (primaryRouteUrl && activity.payload) {
+    const routeUrl = primaryRouteUrl || `https://${environment}.example.com/`;
+    activity.payload.deployment = {
+      id: `deployment-${id}`,
+      routes: {
+        [routeUrl]: {
+          id: `route-${id}`,
+          primary: true,
+          type: "upstream",
+        },
+      },
+    };
+  }
+
+  return activity;
+}
+
+/**
  * @param {{
  *   activity: UpsunActivity,
  *   variables?: UpsunVariables,
  *   project?: UpsunProject,
- *   deployments?: GitHubDeployment[]
- *   createdDeployment?: GitHubDeployment
+ *   latestDeploymentStatus?: number,
+ *   deploymentByIdStatus?: number,
+ *   deployments?: GitHubDeployment[],
+ *   createDeploymentStatus?: number,
+ *   createdDeployment?: GitHubDeployment,
+ *   createStatusStatus?: number,
+ *   createStatusResponse?: GitHubDeploymentStatus,
  *   storage?: UpsunStorage
  * }} params
  * @returns {FetchCall[]}
@@ -139,8 +238,13 @@ function runScript({
         "https://accounts.upsun.com/my-org/subscriptions/abc",
     },
   },
-  deployments = [createGitHubDeployment(12345)],
-  createdDeployment = createGitHubDeployment(67890),
+  latestDeploymentStatus = 200,
+  deploymentByIdStatus = 200,
+  deployments = [createGitHubDeployment(12345, activity.environments[0])],
+  createDeploymentStatus = 201,
+  createdDeployment = createGitHubDeployment(67890, activity.environments[0]),
+  createStatusStatus = 201,
+  createStatusResponse = createGitHubDeploymentStatus(),
   storage = createStorage(),
 }) {
   /** @type {FetchCall[]} */
@@ -159,50 +263,55 @@ function runScript({
     calls.push({ url, method, body });
 
     if (url.includes("/deployments?environment=")) {
+      const environment = new URL(url).searchParams.get("environment");
+      const latest = deployments.filter((deployment) => {
+        return deployment.environment === environment;
+      });
       return {
-        ok: true,
-        status: 200,
-        statusText: "OK",
-        json: () => deployments,
+        ok: latestDeploymentStatus >= 200 && latestDeploymentStatus < 300,
+        status: latestDeploymentStatus,
+        statusText: getStatusText(latestDeploymentStatus),
+        json: () => latest,
       };
     }
 
-    if (url.endsWith("/deployments")) {
+    if (url.endsWith("/deployments") && method === "POST") {
       return {
-        ok: true,
-        status: 201,
-        statusText: "Created",
-        json: () => createdDeployment,
+        ok: createDeploymentStatus >= 200 && createDeploymentStatus < 300,
+        status: createDeploymentStatus,
+        statusText: getStatusText(createDeploymentStatus),
+        json: () =>
+          createDeploymentStatus >= 200 && createDeploymentStatus < 300
+            ? createdDeployment
+            : { message: "create deployment error" },
       };
     }
 
     if (/\/deployments\/\d+$/.test(url) && method === "GET") {
       const deploymentId = Number(url.match(/\/deployments\/(\d+)$/)?.[1]);
-      const deployment = deployments.find(
-        (candidate) => candidate.id === deploymentId,
-      );
-      if (!deployment) {
-        return {
-          ok: false,
-          status: 404,
-          statusText: "Not Found",
-          json: () => ({}),
-        };
-      }
+      const deployment = deployments.find((candidate) => {
+        return candidate.id === deploymentId;
+      });
+
+      const status = deployment ? deploymentByIdStatus : 404;
+      const ok = status >= 200 && status < 300;
       return {
-        ok: true,
-        status: 200,
-        statusText: "OK",
-        json: () => deployment,
+        ok,
+        status,
+        statusText: getStatusText(status),
+        json: () => (ok ? deployment : {}),
       };
     }
 
-    if (url.includes("/statuses")) {
+    if (url.includes("/statuses") && method === "POST") {
       return {
-        ok: true,
-        status: 201,
-        statusText: "Created",
-        json: () => ({ id: 999 }),
+        ok: createStatusStatus >= 200 && createStatusStatus < 300,
+        status: createStatusStatus,
+        statusText: getStatusText(createStatusStatus),
+        json: () =>
+          createStatusStatus >= 200 && createStatusStatus < 300
+            ? createStatusResponse
+            : { message: "create status error" },
       };
     }
 
@@ -233,146 +342,252 @@ function runScript({
   return calls;
 }
 
-test("environment.push complete success updates existing deployment", () => {
+test("unsupported activity types are skipped", () => {
+  const calls = runScript({
+    activity: createActivity({
+      id: "act-1",
+      type: "backup.create",
+      state: "complete",
+      result: "success",
+    }),
+  });
+
+  assert.equal(calls.length, 0);
+});
+
+test("inactive environments are skipped", () => {
+  const calls = runScript({
+    activity: createActivity({
+      id: "act-2",
+      type: "environment.push",
+      state: "pending",
+      environmentStatus: "inactive",
+    }),
+  });
+
+  assert.equal(calls.length, 0);
+});
+
+test("environment.push (pending) creates a deployment when one is not mapped", () => {
   const storage = createStorage();
   const calls = runScript({
     storage,
-    activity: {
-      id: "act-1",
+    deployments: [],
+    createdDeployment: createGitHubDeployment(7001, "main"),
+    activity: createActivity({
+      id: "act-3",
       type: "environment.push",
-      state: "complete",
-      result: "success",
-      project: "proj123",
-      environments: ["main"],
-      payload: {
-        user: createUser(),
-        environment: createEnvironment("main", "production"),
-        commits: [createCommit("abc123")],
-        deployment: {
-          id: "deployment-1",
-          routes: {
-            "https://main.example.com/": {
-              id: "route1",
-              primary: true,
-              type: "upstream",
-            },
-          },
-        },
-      },
-      parameters: { new_commit: "abc123" },
-    },
+      state: "pending",
+    }),
   });
 
   assert.equal(calls.length, 2);
   const call0 = calls[0];
-  assert.ok(call0, "expected fetch call at index 0");
+  assert.ok(call0);
   assert.equal(call0.method, "POST");
   assert.match(call0.url, /\/deployments$/);
-  assert.ok(call0.body, "expected fetch body at index 0");
-  assert.equal(call0.body.environment, "main");
+
   const call1 = calls[1];
-  assert.ok(call1, "expected fetch call at index 1");
+  assert.ok(call1);
   assert.equal(call1.method, "POST");
-  assert.match(call1.url, /\/deployments\/67890\/statuses$/);
-  assert.ok(call1.body, "expected fetch body at index 1");
-  assert.equal(call1.body.state, "success");
-  assert.equal(call1.body.environment_url, "https://main.example.com/");
-  assert.equal(call1.body.auto_inactive, true);
+  assert.match(call1.url, /\/deployments\/7001\/statuses$/);
+  assert.ok(call1.body);
+  assert.equal(call1.body.state, "queued");
+
   assert.equal(
-    storage.get("upsun-github-deployment-by-activity:act-1"),
-    "67890",
+    storage.get("upsun-github-deployment-by-activity:act-3"),
+    "7001",
   );
 });
 
-test("environment.deactivate complete marks deployment inactive", () => {
+test("environment.push (in_progress) marks mapped deployment as in progress", () => {
+  const storage = createStorage({
+    "upsun-github-deployment-by-activity:act-4": "777",
+  });
   const calls = runScript({
-    activity: {
-      id: "act-2",
-      type: "environment.deactivate",
+    storage,
+    deployments: [createGitHubDeployment(777, "main")],
+    activity: createActivity({
+      id: "act-4",
+      type: "environment.push",
+      state: "in_progress",
+    }),
+  });
+
+  assert.equal(calls.length, 2);
+  const call0 = calls[0];
+  assert.ok(call0);
+  assert.equal(call0.method, "GET");
+  assert.match(call0.url, /\/deployments\/777$/);
+
+  const call1 = calls[1];
+  assert.ok(call1);
+  assert.equal(call1.method, "POST");
+  assert.match(call1.url, /\/deployments\/777\/statuses$/);
+  assert.ok(call1.body);
+  assert.equal(call1.body.state, "in_progress");
+});
+
+test("environment.push (complete) marks mapped deployment as success", () => {
+  const storage = createStorage({
+    "upsun-github-deployment-by-activity:act-5": "778",
+  });
+  const calls = runScript({
+    storage,
+    deployments: [createGitHubDeployment(778, "main")],
+    activity: createActivity({
+      id: "act-5",
+      type: "environment.push",
       state: "complete",
       result: "success",
-      project: "proj123",
-      environments: ["feature-1"],
-      payload: {
-        user: createUser(),
-        environment: createEnvironment("feature-1", "development"),
-      },
-    },
+    }),
   });
 
   assert.equal(calls.length, 2);
   const call1 = calls[1];
-  assert.ok(call1, "expected fetch call at index 1");
+  assert.ok(call1);
   assert.equal(call1.method, "POST");
-  assert.ok(call1.body, "expected fetch body at index 1");
+  assert.match(call1.url, /\/deployments\/778\/statuses$/);
+  assert.ok(call1.body);
+  assert.equal(call1.body.state, "success");
+  assert.equal(call1.body.auto_inactive, true);
+});
+
+test("adding a domain on complete updates deployment with new domain", () => {
+  const calls = runScript({
+    deployments: [createGitHubDeployment(801, "main")],
+    activity: createActivity({
+      id: "act-6",
+      type: "environment.domain.create",
+      state: "complete",
+      result: "success",
+      primaryRouteUrl: "https://new-main.example.com/",
+    }),
+  });
+
+  assert.equal(calls.length, 2);
+  const call0 = calls[0];
+  assert.ok(call0);
+  assert.equal(call0.method, "GET");
+  assert.match(call0.url, /\/deployments\?environment=main&per_page=1$/);
+
+  const call1 = calls[1];
+  assert.ok(call1);
+  assert.equal(call1.method, "POST");
+  assert.match(call1.url, /\/deployments\/801\/statuses$/);
+  assert.ok(call1.body);
+  assert.equal(call1.body.state, "success");
+  assert.equal(call1.body.environment_url, "https://new-main.example.com/");
+  assert.equal(call1.body.auto_inactive, true);
+});
+
+test("removing a domain on complete updates deployment with remaining domain", () => {
+  const calls = runScript({
+    deployments: [createGitHubDeployment(802, "main")],
+    activity: createActivity({
+      id: "act-7",
+      type: "environment.domain.delete",
+      state: "complete",
+      result: "success",
+      primaryRouteUrl: "https://main.example.com/",
+    }),
+  });
+
+  assert.equal(calls.length, 2);
+  const call0 = calls[0];
+  assert.ok(call0);
+  assert.equal(call0.method, "GET");
+  assert.match(call0.url, /\/deployments\?environment=main&per_page=1$/);
+
+  const call1 = calls[1];
+  assert.ok(call1);
+  assert.equal(call1.method, "POST");
+  assert.match(call1.url, /\/deployments\/802\/statuses$/);
+  assert.ok(call1.body);
+  assert.equal(call1.body.state, "success");
+  assert.equal(call1.body.environment_url, "https://main.example.com/");
+  assert.equal(call1.body.auto_inactive, true);
+});
+
+test("environment.activate updates an existing deployment", () => {
+  const calls = runScript({
+    deployments: [createGitHubDeployment(803, "main")],
+    activity: createActivity({
+      id: "act-8",
+      type: "environment.activate",
+      state: "in_progress",
+    }),
+  });
+
+  assert.equal(calls.length, 2);
+  const call0 = calls[0];
+  assert.ok(call0);
+  assert.equal(call0.method, "GET");
+  assert.match(call0.url, /\/deployments\?environment=main&per_page=1$/);
+
+  const call1 = calls[1];
+  assert.ok(call1);
+  assert.equal(call1.method, "POST");
+  assert.match(call1.url, /\/deployments\/803\/statuses$/);
+  assert.ok(call1.body);
+  assert.equal(call1.body.state, "in_progress");
+});
+
+test("environment.deactivate deactivates the latest deployment", () => {
+  const calls = runScript({
+    deployments: [createGitHubDeployment(901, "main")],
+    activity: createActivity({
+      id: "act-9",
+      type: "environment.deactivate",
+      state: "complete",
+      result: "success",
+    }),
+  });
+
+  assert.equal(calls.length, 2);
+  const call0 = calls[0];
+  assert.ok(call0);
+  assert.equal(call0.method, "GET");
+  assert.match(call0.url, /\/deployments\?environment=main&per_page=1$/);
+
+  const call1 = calls[1];
+  assert.ok(call1);
+  assert.equal(call1.method, "POST");
+  assert.match(call1.url, /\/deployments\/901\/statuses$/);
+  assert.ok(call1.body);
   assert.equal(call1.body.state, "inactive");
   assert.equal(call1.body.description, "Environment closed");
 });
 
-test("environment.activate uses latest deployment when available", () => {
+test("environment.delete deactivates the latest deployment", () => {
   const calls = runScript({
-    activity: {
-      id: "act-3",
-      type: "environment.activate",
+    deployments: [createGitHubDeployment(902, "main")],
+    activity: createActivity({
+      id: "act-10",
+      type: "environment.delete",
       state: "complete",
       result: "success",
-      project: "proj123",
-      environments: ["dev"],
-      payload: {
-        user: createUser(),
-        environment: createEnvironment("dev", "development"),
-      },
-      parameters: { new_commit: "def456" },
-    },
+    }),
   });
 
   assert.equal(calls.length, 2);
   const call0 = calls[0];
-  assert.ok(call0, "expected fetch call at index 0");
+  assert.ok(call0);
   assert.equal(call0.method, "GET");
+  assert.match(call0.url, /\/deployments\?environment=main&per_page=1$/);
+
   const call1 = calls[1];
-  assert.ok(call1, "expected fetch call at index 1");
+  assert.ok(call1);
   assert.equal(call1.method, "POST");
-  assert.match(call1.url, /\/deployments\/12345\/statuses$/);
+  assert.match(call1.url, /\/deployments\/902\/statuses$/);
+  assert.ok(call1.body);
+  assert.equal(call1.body.state, "inactive");
+  assert.equal(call1.body.description, "Environment closed");
 });
 
-test("environment.push reuses stored deployment id for same activity", () => {
+test("throws when mapped deployment id cannot be fetched", () => {
   const storage = createStorage({
-    "upsun-github-deployment-by-activity:act-5": "777",
-  });
-
-  const calls = runScript({
-    storage,
-    deployments: [createGitHubDeployment(777)],
-    activity: {
-      id: "act-5",
-      type: "environment.push",
-      state: "in_progress",
-      project: "proj123",
-      environments: ["main"],
-      payload: {
-        user: createUser(),
-        environment: createEnvironment("main", "production"),
-      },
-    },
-  });
-
-  assert.equal(calls.length, 2);
-  const call0 = calls[0];
-  assert.ok(call0, "expected fetch call at index 0");
-  assert.equal(call0.method, "GET");
-  assert.match(call0.url, /\/deployments\/777$/);
-  const call1 = calls[1];
-  assert.ok(call1, "expected fetch call at index 1");
-  assert.equal(call1.method, "POST");
-  assert.match(call1.url, /\/deployments\/777\/statuses$/);
-  assert.ok(call1.body, "expected fetch body at index 1");
-  assert.equal(call1.body.state, "in_progress");
-});
-
-test("environment.push throws when stored deployment id cannot be fetched", () => {
-  const storage = createStorage({
-    "upsun-github-deployment-by-activity:act-6": "888",
+    "upsun-github-deployment-by-activity:act-11": "999",
   });
 
   assert.throws(
@@ -380,37 +595,59 @@ test("environment.push throws when stored deployment id cannot be fetched", () =
       runScript({
         storage,
         deployments: [],
-        activity: {
-          id: "act-6",
+        activity: createActivity({
+          id: "act-11",
           type: "environment.push",
           state: "in_progress",
-          project: "proj123",
-          environments: ["main"],
-          payload: {
-            user: createUser(),
-            environment: createEnvironment("main", "production"),
-          },
-        },
+        }),
       }),
-    /Failed to fetch deployment 888: 404 Not Found/,
+    /Failed to fetch deployment 999: 404 Not Found/,
   );
 });
 
-test("unsupported activity type is skipped", () => {
-  const calls = runScript({
-    activity: {
-      id: "act-4",
-      type: "backup.create",
-      state: "complete",
-      result: "success",
-      project: "proj123",
-      environments: ["main"],
-      payload: {
-        user: createUser(),
-        environment: createEnvironment("main", "production"),
-      },
-    },
-  });
+test("throws when latest deployment lookup fails", () => {
+  assert.throws(
+    () =>
+      runScript({
+        latestDeploymentStatus: 500,
+        activity: createActivity({
+          id: "act-12",
+          type: "environment.activate",
+          state: "in_progress",
+        }),
+      }),
+    /Failed to fetch latest deployment for environment main: 500 Internal Server Error/,
+  );
+});
 
-  assert.equal(calls.length, 0);
+test("throws when creating a deployment fails", () => {
+  assert.throws(
+    () =>
+      runScript({
+        createDeploymentStatus: 500,
+        deployments: [],
+        activity: createActivity({
+          id: "act-13",
+          type: "environment.push",
+          state: "pending",
+        }),
+      }),
+    /Failed to create deployment: 500 Internal Server Error/,
+  );
+});
+
+test("throws when creating deployment status fails", () => {
+  assert.throws(
+    () =>
+      runScript({
+        createStatusStatus: 500,
+        deployments: [createGitHubDeployment(804, "main")],
+        activity: createActivity({
+          id: "act-14",
+          type: "environment.activate",
+          state: "in_progress",
+        }),
+      }),
+    /Failed to create deployment status : 500 Internal Server Error/,
+  );
 });
