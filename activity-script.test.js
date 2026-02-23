@@ -336,31 +336,6 @@ test("environment.activate uses latest deployment when available", () => {
   assert.match(call1.url, /\/deployments\/12345\/statuses$/);
 });
 
-test("environment.activate skips when no latest deployment exists", () => {
-  const calls = runScript({
-    deployments: [],
-    activity: {
-      id: "act-3b",
-      type: "environment.activate",
-      state: "complete",
-      result: "success",
-      project: "proj123",
-      environments: ["dev"],
-      payload: {
-        user: createUser(),
-        environment: createEnvironment("dev", "development"),
-      },
-      parameters: { new_commit: "def456" },
-    },
-  });
-
-  assert.equal(calls.length, 1);
-  const call0 = calls[0];
-  assert.ok(call0, "expected fetch call at index 0");
-  assert.equal(call0.method, "GET");
-  assert.match(call0.url, /\/deployments\?environment=dev&per_page=1$/);
-});
-
 test("environment.push reuses stored deployment id for same activity", () => {
   const storage = createStorage({
     "upsun-github-deployment-by-activity:act-5": "777",

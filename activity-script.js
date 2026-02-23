@@ -198,6 +198,9 @@ const storageApi = require("storage");
  * @returns {boolean}
  */
 function shouldProcessActivity(activity) {
+  const environment = activity.environments[0] || "unknown";
+  const environmentState = activity.payload?.environment?.status || "unknown";
+
   const supportedTypes = [
     "environment.push",
     "environment.activate",
@@ -208,10 +211,16 @@ function shouldProcessActivity(activity) {
   ];
 
   const supportedType = supportedTypes.includes(activity.type);
-  const environmentInactive =
-    activity?.payload?.environment?.status === "inactive";
+  const environmentInactive = environmentState === "inactive";
 
-  return supportedType && !environmentInactive;
+  const shouldProcess = supportedType && !environmentInactive;
+  if (!shouldProcess) {
+    console.log(
+      `Not processing activity type: ${activity.type}, state: ${activity.state} for environment ${environment}, state ${environmentState}`,
+    );
+  }
+
+  return shouldProcess;
 }
 
 /**
@@ -246,6 +255,10 @@ function validateContext(context) {
  * @returns {void}
  */
 function processActivity(context) {
+  console.log(
+    `Processing activity: ${context.activity.type} (${context.activity.state}) for environment: ${context.activity.environments[0]}`,
+  );
+
   // Determine what action to take based on activity type and state
   if (
     context.activity.type === "environment.deactivate" ||
@@ -291,13 +304,6 @@ function handleEnvironmentDeactivation(context) {
  */
 function handleEnvironmentDeployment(context) {
   const deployment = resolveDeploymentForActivity(context);
-  if (!deployment) {
-    console.log(
-      `No deployment found for activity ${context.activity.id} (${context.activity.type})`,
-    );
-    return;
-  }
-
   const status = generateDeploymentStatus(context);
   createDeploymentStatus(context, deployment.id, status);
 }
@@ -308,7 +314,7 @@ function handleEnvironmentDeployment(context) {
  * the mapping in Upsun's storage API. Other activity types use the latest
  * deployment for the environment.
  * @param {UpsunValidatedContext} context
- * @returns {GitHubDeployment|undefined}
+ * @returns {GitHubDeployment}
  */
 function resolveDeploymentForActivity(context) {
   if (context.activity.type === "environment.push") {
@@ -336,15 +342,23 @@ function resolveDeploymentForActivity(context) {
     }
   }
 
-  const deployment = getLatestDeployment(context);
-  if (deployment) {
+  const latestDeployment = getLatestDeployment(context);
+  if (latestDeployment) {
     console.log(
-      `Retrieved latest deployment ${deployment.id} for activity ${context.activity.id} (${context.activity.type})`,
-      JSON.stringify(deployment, null, 2),
+      `Retrieved latest deployment ${latestDeployment.id} for activity ${context.activity.id} (${context.activity.type})`,
+      JSON.stringify(latestDeployment, null, 2),
     );
-    return deployment;
+    return latestDeployment;
   }
-  return;
+
+  // We always expect to be able to determine a deployment for an activity. If
+  // we cannot then we will have to create a new one we can work with.
+  const deployment = createDeployment(context);
+  console.log(
+    `Created new deployment ${deployment.id} for activity ${context.activity.id} (${context.activity.type})`,
+    JSON.stringify(deployment, null, 2),
+  );
+  return deployment;
 }
 
 /**
@@ -407,29 +421,23 @@ function getLatestDeployment(context) {
   const environment = context.activity.environments[0];
   const url = `${GITHUB_API_BASE}/repos/${context.variables.GH_REPO}/deployments?environment=${environment}&per_page=1`;
 
-  try {
-    /** @type Response|any */
-    const response = fetch(url, {
-      headers: {
-        Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${context.variables.GH_TOKEN}`,
-        "X-GitHub-Api-Version": GITHUB_API_VERSION,
-      },
-    });
-    if (!response.ok) {
-      console.log(
-        `Failed to fetch deployment for environment ${environment}: ${response.status} ${response.statusText}`,
-      );
-      return;
-    }
-
-    /** @type {GitHubDeploymentsResponse} */
-    const deployments = response.json();
-    return deployments.shift();
-  } catch (error) {
-    console.log("Error fetching deployment:", error.message);
-    return;
+  /** @type Response|any */
+  const response = fetch(url, {
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${context.variables.GH_TOKEN}`,
+      "X-GitHub-Api-Version": GITHUB_API_VERSION,
+    },
+  });
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch latest deployment for environment ${environment}: ${response.status} ${response.statusText}`,
+    );
   }
+
+  /** @type {GitHubDeploymentsResponse} */
+  const deployments = response.json();
+  return deployments.shift();
 }
 
 /**
@@ -724,22 +732,11 @@ function getCommitRef(activity) {
 function main(context) {
   "use strict";
 
-  const environment = context.activity.environments[0] || "unknown";
-  const environmentStatus =
-    context.activity.payload?.environment?.status || "unknown";
-
   if (!shouldProcessActivity(context.activity)) {
-    console.log(
-      `Skipping activity type: ${context.activity.type}, state: ${context.activity.state} for environment ${environment}, state ${environmentStatus}`,
-    );
     return;
   }
 
   validateContext(context);
-
-  console.log(
-    `Processing activity: ${context.activity.type} (${context.activity.state}) for environment: ${environment}`,
-  );
   processActivity(context);
 }
 
