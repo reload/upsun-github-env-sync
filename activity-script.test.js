@@ -6,17 +6,17 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 /**
- * Reuse typedefs from the activity script to keep tests and runtime in sync.
- * @typedef {import("./activity-script.js").UpsunActivity} UpsunActivity
- * @typedef {import("./activity-script.js").UpsunVariables} UpsunVariables
- * @typedef {import("./activity-script.js").UpsunProject} UpsunProject
- * @typedef {import("./activity-script.js").UpsunEnvironment} UpsunEnvironment
- * @typedef {import("./activity-script.js").UpsunActivityPayload["user"]} UpsunUser
- * @typedef {import("./activity-script.js").UpsunCommit} UpsunCommit
- * @typedef {import("./activity-script.js").UpsunStorage} UpsunStorage
- * @typedef {import("./activity-script.js").GitHubDeployment} GitHubDeployment
- * @typedef {import("./activity-script.js").GitHubDeploymentStatus} GitHubDeploymentStatus
- * @typedef {import("./activity-script.js").GitHubBranch} GitHubBranch
+ * Shared type definitions for tests and runtime.
+ * @typedef {import("./types").UpsunActivity} UpsunActivity
+ * @typedef {import("./types").UpsunVariables} UpsunVariables
+ * @typedef {import("./types").UpsunProject} UpsunProject
+ * @typedef {import("./types").UpsunEnvironment} UpsunEnvironment
+ * @typedef {import("./types").UpsunUser} UpsunUser
+ * @typedef {import("./types").UpsunCommit} UpsunCommit
+ * @typedef {import("./types").UpsunStorage} UpsunStorage
+ * @typedef {import("./types").GitHubDeployment} GitHubDeployment
+ * @typedef {import("./types").GitHubDeploymentStatus} GitHubDeploymentStatus
+ * @typedef {import("./types").GitHubBranch} GitHubBranch
  */
 
 /**
