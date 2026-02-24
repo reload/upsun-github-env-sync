@@ -433,19 +433,7 @@ function getLatestDeployment(context) {
   const environment = context.activity.environments[0];
   const url = `${GITHUB_API_BASE}/repos/${context.variables.GH_REPO}/deployments?environment=${environment}&per_page=1`;
 
-  /** @type Response|any */
-  const response = fetch(url, {
-    headers: {
-      Accept: "application/vnd.github+json",
-      Authorization: `Bearer ${context.variables.GH_TOKEN}`,
-      "X-GitHub-Api-Version": GITHUB_API_VERSION,
-    },
-  });
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch latest deployment for environment ${environment}: ${response.status} ${response.statusText}`,
-    );
-  }
+  const response = fetchGitHub(context, url);
 
   /** @type {GitHubDeploymentsResponse} */
   const deployments = response.json();
@@ -461,19 +449,7 @@ function getLatestDeployment(context) {
 function getDeploymentById(context, deploymentId) {
   const url = `${GITHUB_API_BASE}/repos/${context.variables.GH_REPO}/deployments/${deploymentId}`;
 
-  /** @type Response|any */
-  const response = fetch(url, {
-    headers: {
-      Accept: "application/vnd.github+json",
-      Authorization: `Bearer ${context.variables.GH_TOKEN}`,
-      "X-GitHub-Api-Version": GITHUB_API_VERSION,
-    },
-  });
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch deployment ${deploymentId}: ${response.status} ${response.statusText}`,
-    );
-  }
+  const response = fetchGitHub(context, url);
 
   /** @type {GitHubDeployment} */
   const deployment = response.json();
@@ -504,31 +480,10 @@ function createDeployment(context) {
     required_contexts: [], // Bypass status checks
   };
 
-  /** @type Response|any */
-  const response = fetch(url, {
+  const response = fetchGitHub(context, url, {
     method: "POST",
-    headers: {
-      Accept: "application/vnd.github+json",
-      Authorization: `Bearer ${context.variables.GH_TOKEN}`,
-      "X-GitHub-Api-Version": GITHUB_API_VERSION,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
+    body: payload,
   });
-
-  if (!response.ok) {
-    throw new Error(
-      JSON.stringify(
-        {
-          message: `Failed to create deployment: ${response.status} ${response.statusText}`,
-          status: payload,
-          response: response.json(),
-        },
-        null,
-        2,
-      ),
-    );
-  }
 
   /** @type {GitHubDeployment} */
   const deployment = response.json();
@@ -549,31 +504,10 @@ function createDeployment(context) {
 function createDeploymentStatus(context, deploymentId, status) {
   const url = `${GITHUB_API_BASE}/repos/${context.variables.GH_REPO}/deployments/${deploymentId}/statuses`;
 
-  /** @type Response|any */
-  const response = fetch(url, {
+  fetchGitHub(context, url, {
     method: "POST",
-    headers: {
-      Accept: "application/vnd.github+json",
-      Authorization: `Bearer ${context.variables.GH_TOKEN}`,
-      "X-GitHub-Api-Version": GITHUB_API_VERSION,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(status),
+    body: status,
   });
-
-  if (!response.ok) {
-    throw new Error(
-      JSON.stringify(
-        {
-          message: `Failed to create deployment status : ${response.status} ${response.statusText}`,
-          status: status,
-          response: response.json(),
-        },
-        null,
-        2,
-      ),
-    );
-  }
 
   console.log(
     `Updated deployment ${deploymentId} status to: ${status.state}`,
@@ -727,20 +661,7 @@ function getCommitSha(activity) {
 function getBranchByHeadCommit(context, commitSha) {
   const url = `${GITHUB_API_BASE}/repos/${context.variables.GH_REPO}/commits/${encodeURIComponent(commitSha)}/branches-where-head`;
 
-  /** @type Response|any */
-  const response = fetch(url, {
-    headers: {
-      Accept: "application/vnd.github+json",
-      Authorization: `Bearer ${context.variables.GH_TOKEN}`,
-      "X-GitHub-Api-Version": GITHUB_API_VERSION,
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to lookup branch by head commit for ${commitSha}: ${response.status} ${response.statusText}`,
-    );
-  }
+  const response = fetchGitHub(context, url);
 
   /** @type {GitHubBranchesWhereHeadResponse} */
   const branches = response.json();
@@ -772,6 +693,44 @@ function getRef(context) {
     `Falling back to environment name ${activity.environments[0]} as deployment ref`,
   );
   return activity.environments[0];
+}
+
+/**
+ * Perform an authenticated request to the GitHub API.
+ * @param {UpsunValidatedContext} context
+ * @param {string} url
+ * @param {{ method?: string, body?: unknown }} [options]
+ * @returns {Response|any}
+ */
+function fetchGitHub(context, url, options = {}) {
+  /** @type {Record<string, string>} */
+  const headers = {
+    Accept: "application/vnd.github+json",
+    Authorization: `Bearer ${context.variables.GH_TOKEN}`,
+    "X-GitHub-Api-Version": GITHUB_API_VERSION,
+  };
+
+  const requestOptions = {
+    method: options.method,
+    headers,
+  };
+
+  if (options.body !== undefined) {
+    headers["Content-Type"] = "application/json";
+    requestOptions.body = JSON.stringify(options.body);
+  }
+
+  /** @type {Response|any} */
+  const response = fetch(url, requestOptions);
+  if (!response.ok) {
+    const errorMessage = JSON.stringify({
+      message: `GitHub API request for ${url} failed: (${response.status}) ${response.statusText}`,
+      request: options.body,
+      response: response.json(),
+    });
+    throw new Error(errorMessage);
+  }
+  return response;
 }
 
 // ============================================================================

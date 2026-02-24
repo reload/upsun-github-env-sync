@@ -752,10 +752,7 @@ test("throws when branch lookup by head commit fails", () => {
       branchesWhereHeadStatus: 500,
     });
 
-  assert.throws(
-    run,
-    /Failed to lookup branch by head commit for abc123: 500 Internal Server Error/,
-  );
+  assert.throws(run, /GitHub API request for .* failed/);
 });
 
 test("throws when mapped deployment id cannot be fetched", () => {
@@ -777,7 +774,7 @@ test("throws when mapped deployment id cannot be fetched", () => {
     });
   };
 
-  assert.throws(run, /Failed to fetch deployment 999: 404 Not Found/);
+  assert.throws(run, /GitHub API request for .* failed/);
 });
 
 test("throws when latest deployment lookup fails", () => {
@@ -794,10 +791,7 @@ test("throws when latest deployment lookup fails", () => {
       activity,
     });
 
-  assert.throws(
-    run,
-    /Failed to fetch latest deployment for environment main: 500 Internal Server Error/,
-  );
+  assert.throws(run, /GitHub API request for .* failed/);
 });
 
 test("throws when creating a deployment fails", () => {
@@ -815,7 +809,7 @@ test("throws when creating a deployment fails", () => {
       activity,
     });
 
-  assert.throws(run, /Failed to create deployment: 500 Internal Server Error/);
+  assert.throws(run, /GitHub API request for .* failed/);
 });
 
 test("throws when creating deployment status fails", () => {
@@ -834,10 +828,7 @@ test("throws when creating deployment status fails", () => {
       activity,
     });
 
-  assert.throws(
-    run,
-    /Failed to create deployment status : 500 Internal Server Error/,
-  );
+  assert.throws(run, /GitHub API request for .* failed/);
 });
 
 test("throws when required GitHub configuration is missing", () => {
