@@ -175,6 +175,18 @@
  * @typedef {Array<GitHubDeployment>} GitHubDeploymentsResponse
  */
 
+/**
+ * @typedef {Object} GitHubBranch
+ * @property {string} name - Branch name
+ * @property {{ sha: string, url: string }} commit - Head commit details
+ * @property {boolean} protected - Whether branch protections are enabled
+ */
+
+/**
+ * GitHub API response for branches where a commit is HEAD.
+ * @typedef {Array<GitHubBranch>} GitHubBranchesWhereHeadResponse
+ */
+
 // ============================================================================
 // Configuration Constants
 // ============================================================================
@@ -481,8 +493,8 @@ function createDeployment(context) {
   const upsunEnvType = context.activity.payload?.environment?.type || "";
   const isProduction = upsunEnvType === "production";
 
-  // Get the commit SHA from activity payload
-  const ref = getCommitRef(context.activity);
+  // Resolve a branch ref whenever possible, with commit/environment fallbacks.
+  const ref = getRef(context);
 
   const payload = {
     ref: ref,
@@ -688,36 +700,77 @@ function getLogUrl(context) {
 /**
  * Get commit reference from activity payload
  * @param {UpsunValidatedActivity} activity - Upsun activity object
- * @returns {string}
+ * @returns {string|undefined}
  */
-function getCommitRef(activity) {
-  try {
-    // Try to get from payload
-    if (
-      activity.payload &&
-      activity.payload.commits &&
-      activity.payload.commits.length > 0
-    ) {
-      // Get the latest commit
-      const commits = activity.payload.commits;
-      const lastCommit = commits[commits.length - 1];
-      // Handle both string and object formats
-      if (typeof lastCommit === "string") {
-        return lastCommit;
-      } else if (lastCommit && lastCommit.sha) {
-        return lastCommit.sha;
-      }
-    }
+function getCommitSha(activity) {
+  const commits = activity.payload?.commits || [];
+  const lastCommit =
+    commits.length > 0 ? commits[commits.length - 1] : undefined;
 
-    // Try to get from parameters
-    if (activity.parameters && activity.parameters.new_commit) {
-      return activity.parameters.new_commit;
-    }
-  } catch (error) {
-    console.log("Error getting commit ref:", error.message);
+  if (typeof lastCommit === "string") {
+    return lastCommit;
   }
 
-  // Fallback: use environment name as ref
+  if (typeof lastCommit !== "string" && lastCommit?.sha) {
+    return lastCommit.sha;
+  }
+
+  return activity.parameters?.new_commit;
+}
+
+/**
+ * Lookup branches where the commit is currently HEAD.
+ * @param {UpsunValidatedContext} context
+ * @param {string} commitSha
+ * @returns {string|undefined}
+ */
+function getBranchByHeadCommit(context, commitSha) {
+  const url = `${GITHUB_API_BASE}/repos/${context.variables.GH_REPO}/commits/${encodeURIComponent(commitSha)}/branches-where-head`;
+
+  /** @type Response|any */
+  const response = fetch(url, {
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${context.variables.GH_TOKEN}`,
+      "X-GitHub-Api-Version": GITHUB_API_VERSION,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to lookup branch by head commit for ${commitSha}: ${response.status} ${response.statusText}`,
+    );
+  }
+
+  /** @type {GitHubBranchesWhereHeadResponse} */
+  const branches = response.json();
+  return branches.shift()?.name;
+}
+
+/**
+ * Resolve deployment ref from activity context.
+ * @param {UpsunValidatedContext} context
+ * @returns {string}
+ */
+function getRef(context) {
+  const activity = context.activity;
+  const commitSha = getCommitSha(activity);
+  if (commitSha) {
+    // Prefer branch name as ref over commit. This seems to work better for
+    // issue to deployment mapping in JIRA.
+    const branchByHeadCommit = getBranchByHeadCommit(context, commitSha);
+    if (branchByHeadCommit) {
+      console.log(`Using branch name ${branchByHeadCommit} as deployment ref`);
+      return branchByHeadCommit;
+    }
+
+    console.log(`Using commit SHA ${commitSha} as deployment ref`);
+    return commitSha;
+  }
+
+  console.log(
+    `Falling back to environment name ${activity.environments[0]} as deployment ref`,
+  );
   return activity.environments[0];
 }
 

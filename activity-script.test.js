@@ -16,6 +16,7 @@ const vm = require("node:vm");
  * @typedef {import("./activity-script.js").UpsunStorage} UpsunStorage
  * @typedef {import("./activity-script.js").GitHubDeployment} GitHubDeployment
  * @typedef {import("./activity-script.js").GitHubDeploymentStatus} GitHubDeploymentStatus
+ * @typedef {import("./activity-script.js").GitHubBranch} GitHubBranch
  */
 
 /**
@@ -71,6 +72,22 @@ function createCommit(sha) {
     },
     parents: [],
     message: "Fixture commit",
+  };
+}
+
+/**
+ * @param {string} name
+ * @param {string} [sha]
+ * @returns {GitHubBranch}
+ */
+function createBranch(name, sha = "fixture-sha") {
+  return {
+    name,
+    commit: {
+      sha,
+      url: `https://api.github.com/repos/owner/repo/commits/${sha}`,
+    },
+    protected: false,
   };
 }
 
@@ -225,6 +242,8 @@ function createActivity({
  *   createdDeployment?: GitHubDeployment,
  *   createStatusStatus?: number,
  *   createStatusResponse?: GitHubDeploymentStatus,
+ *   branchesWhereHeadStatus?: number,
+ *   branchesWhereHead?: GitHubBranch[],
  *   storage?: UpsunStorage
  * }} params
  * @returns {FetchCall[]}
@@ -240,11 +259,18 @@ function runScript({
   },
   latestDeploymentStatus = 200,
   deploymentByIdStatus = 200,
-  deployments = [createGitHubDeployment(12345, activity.environments[0])],
+  deployments = [
+    createGitHubDeployment(12345, activity.environments[0] || "main"),
+  ],
   createDeploymentStatus = 201,
-  createdDeployment = createGitHubDeployment(67890, activity.environments[0]),
+  createdDeployment = createGitHubDeployment(
+    67890,
+    activity.environments[0] || "main",
+  ),
   createStatusStatus = 201,
   createStatusResponse = createGitHubDeploymentStatus(),
+  branchesWhereHeadStatus = 200,
+  branchesWhereHead = [createBranch(activity.environments[0] || "main")],
   storage = createStorage(),
 }) {
   /** @type {FetchCall[]} */
@@ -261,6 +287,18 @@ function runScript({
       ? /** @type {Record<string, unknown>} */ (JSON.parse(options.body))
       : undefined;
     calls.push({ url, method, body });
+
+    if (
+      /\/commits\/[^/]+\/branches-where-head$/.test(url) &&
+      method === "GET"
+    ) {
+      return {
+        ok: branchesWhereHeadStatus >= 200 && branchesWhereHeadStatus < 300,
+        status: branchesWhereHeadStatus,
+        statusText: getStatusText(branchesWhereHeadStatus),
+        json: () => branchesWhereHead,
+      };
+    }
 
     if (url.includes("/deployments?environment=")) {
       const environment = new URL(url).searchParams.get("environment");
@@ -377,13 +415,19 @@ test("environment.push (pending) creates a deployment when one is not mapped", (
     deployments: [],
     createdDeployment: createGitHubDeployment(7001, "main"),
   });
-  assert.equal(calls.length, 2);
-  const createDeploymentCall = calls[0];
+  assert.equal(calls.length, 3);
+  const createDeploymentCall = calls.find((call) => {
+    return call.method === "POST" && /\/deployments$/.test(call.url);
+  });
   assert.ok(createDeploymentCall);
   assert.equal(createDeploymentCall.method, "POST");
   assert.match(createDeploymentCall.url, /\/deployments$/);
 
-  const createStatusCall = calls[1];
+  const createStatusCall = calls.find((call) => {
+    return (
+      call.method === "POST" && /\/deployments\/7001\/statuses$/.test(call.url)
+    );
+  });
   assert.ok(createStatusCall);
   assert.equal(createStatusCall.method, "POST");
   assert.match(createStatusCall.url, /\/deployments\/7001\/statuses$/);
@@ -393,6 +437,53 @@ test("environment.push (pending) creates a deployment when one is not mapped", (
     storage.get("upsun-github-deployment-by-activity:act-3"),
     "7001",
   );
+});
+
+test("create deployment uses branch name resolved from head commit", () => {
+  const activity = createActivity({
+    id: "act-3b",
+    type: "environment.push",
+    state: "pending",
+    environment: "pr-123",
+    environmentType: "development",
+  });
+  const branchesWhereHead = [createBranch("feature/ABC-123")];
+
+  const calls = runScript({
+    activity,
+    deployments: [],
+    branchesWhereHead,
+  });
+
+  const createDeploymentCall = calls.find((call) => {
+    return call.method === "POST" && /\/deployments$/.test(call.url);
+  });
+  assert.ok(createDeploymentCall);
+  assert.ok(createDeploymentCall.body);
+  assert.equal(createDeploymentCall.body.ref, "feature/ABC-123");
+});
+
+test("create deployment falls back to commit SHA when no branch is resolved", () => {
+  const activity = createActivity({
+    id: "act-3c",
+    type: "environment.push",
+    state: "pending",
+    environment: "pr-125",
+    environmentType: "development",
+  });
+
+  const calls = runScript({
+    activity,
+    deployments: [],
+    branchesWhereHead: [],
+  });
+
+  const createDeploymentCall = calls.find((call) => {
+    return call.method === "POST" && /\/deployments$/.test(call.url);
+  });
+  assert.ok(createDeploymentCall);
+  assert.ok(createDeploymentCall.body);
+  assert.equal(createDeploymentCall.body.ref, "abc123");
 });
 
 test("environment.push (in_progress) marks mapped deployment as in progress", () => {
@@ -645,6 +736,26 @@ test("environment.delete deactivates the latest deployment", () => {
   assert.ok(createStatusCall.body);
   assert.equal(createStatusCall.body.state, "inactive");
   assert.equal(createStatusCall.body.description, "Environment closed");
+});
+
+test("throws when branch lookup by head commit fails", () => {
+  const activity = createActivity({
+    id: "act-3d",
+    type: "environment.push",
+    state: "pending",
+  });
+
+  const run = () =>
+    runScript({
+      activity,
+      deployments: [],
+      branchesWhereHeadStatus: 500,
+    });
+
+  assert.throws(
+    run,
+    /Failed to lookup branch by head commit for abc123: 500 Internal Server Error/,
+  );
 });
 
 test("throws when mapped deployment id cannot be fetched", () => {
