@@ -9,6 +9,7 @@
  * Events handled:
  * - environment.push: Code pushed to environment
  * - environment.activate: Environment activated
+ * - environment.redeploy: Environment redeployed
  * - environment.deactivate: Environment deactivated
  * - environment.delete: Environment deleted
  *
@@ -61,6 +62,7 @@ function shouldProcessActivity(activity) {
   const supportedTypes = [
     "environment.push",
     "environment.activate",
+    "environment.redeploy",
     "environment.domain.create",
     "environment.domain.delete",
     "environment.deactivate",
@@ -155,7 +157,7 @@ function handleEnvironmentDeactivation(context) {
 }
 
 /**
- * Handle environment deployment (push/activate)
+ * Handle environment deployment (push/activate/redeploy)
  * @param {UpsunValidatedContext} context
  * @returns {void}
  */

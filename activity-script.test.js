@@ -674,6 +674,36 @@ test("environment.activate updates an existing deployment", () => {
   assert.equal(createStatusCall.body.state, "in_progress");
 });
 
+test("environment.redeploy updates an existing deployment", () => {
+  const activity = createActivity({
+    id: "act-8b",
+    type: "environment.redeploy",
+    state: "in_progress",
+  });
+  const deployments = [createGitHubDeployment(803, "main")];
+
+  const calls = runScript({
+    activity,
+    deployments,
+  });
+
+  assert.equal(calls.length, 2);
+  const getLatestCall = calls[0];
+  assert.ok(getLatestCall);
+  assert.equal(getLatestCall.method, "GET");
+  assert.match(
+    getLatestCall.url,
+    /\/deployments\?environment=main&per_page=1$/,
+  );
+
+  const createStatusCall = calls[1];
+  assert.ok(createStatusCall);
+  assert.equal(createStatusCall.method, "POST");
+  assert.match(createStatusCall.url, /\/deployments\/803\/statuses$/);
+  assert.ok(createStatusCall.body);
+  assert.equal(createStatusCall.body.state, "in_progress");
+});
+
 test("environment.deactivate deactivates the latest deployment", () => {
   const activity = createActivity({
     id: "act-9",
