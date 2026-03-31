@@ -518,16 +518,32 @@ function getBranchByHeadCommit(context, commitSha) {
 
 /**
  * Lookup the head branch name for a pull request.
+ * Uses the GraphQL API to avoid fetching the full pull request payload which
+ * can cause context cancellation timeouts in the Upsun runtime.
  * @param {UpsunValidatedContext} context
  * @param {number} pullNumber
- * @returns {string}
+ * @returns {string|undefined}
  */
 function getBranchByPullRequest(context, pullNumber) {
-  const url = `${GITHUB_API_BASE}/repos/${context.variables.GH_REPO}/pulls/${pullNumber}`;
-  const response = fetchGitHub(context, url);
-  /** @type {GitHubPullRequest} */
-  const pull = response.json();
-  return pull.head.ref;
+  const [owner, repo] = context.variables.GH_REPO.split("/");
+  const query = `query($owner: String!, $repo: String!, $number: Int!) {
+    repository(owner: $owner, name: $repo) {
+      pullRequest(number: $number) {
+        headRefName
+      }
+    }
+  }`;
+
+  const response = fetchGitHub(context, `${GITHUB_API_BASE}/graphql`, {
+    method: "POST",
+    body: {
+      query,
+      variables: { owner, repo, number: pullNumber },
+    },
+  });
+
+  const result = response.json();
+  return result.data?.repository?.pullRequest?.headRefName;
 }
 
 /**

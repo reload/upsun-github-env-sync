@@ -304,14 +304,22 @@ function runScript({
       };
     }
 
-    if (/\/pulls\/\d+$/.test(url) && method === "GET") {
+    if (url.endsWith("/graphql") && method === "POST") {
       return {
         ok: pullRequestStatus >= 200 && pullRequestStatus < 300,
         status: pullRequestStatus,
         statusText: getStatusText(pullRequestStatus),
         json: () =>
           pullRequestStatus >= 200 && pullRequestStatus < 300
-            ? { head: { ref: pullRequestHeadRef } }
+            ? {
+                data: {
+                  repository: {
+                    pullRequest: pullRequestHeadRef
+                      ? { headRefName: pullRequestHeadRef }
+                      : null,
+                  },
+                },
+              }
             : { message: "Not Found" },
       };
     }
@@ -520,10 +528,12 @@ test("create deployment resolves branch from PR on redeploy", () => {
     pullRequestHeadRef: "feature/my-branch",
   });
 
-  const pullsCall = calls.find((call) => {
-    return call.method === "GET" && /\/pulls\/1408$/.test(call.url);
+  const graphqlCall = calls.find((call) => {
+    return call.method === "POST" && call.url.endsWith("/graphql");
   });
-  assert.ok(pullsCall);
+  assert.ok(graphqlCall);
+  assert.ok(graphqlCall.body);
+  assert.equal(graphqlCall.body.variables.number, 1408);
 
   const createDeploymentCall = calls.find((call) => {
     return call.method === "POST" && /\/deployments$/.test(call.url);
