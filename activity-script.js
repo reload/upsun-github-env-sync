@@ -14,7 +14,7 @@
  * - environment.delete: Environment deleted
  *
  * Required project variables:
- * - GH_TOKEN: GitHub personal access token with repo:deployments scope
+ * - GH_TOKEN: GitHub personal access token with repo:deployments and repo:pull_requests scope
  * - GH_REPO: GitHub repository in format "owner/repo"
  *
  * @file
