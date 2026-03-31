@@ -16,7 +16,7 @@ const vm = require("node:vm");
  * @typedef {import("./types").UpsunStorage} UpsunStorage
  * @typedef {import("./types").GitHubDeployment} GitHubDeployment
  * @typedef {import("./types").GitHubDeploymentStatus} GitHubDeploymentStatus
- * @typedef {import("./types").GitHubBranch} GitHubBranch
+ * @typedef {import("./types").GitHubBranchWhereHead} GitHubBranchWhereHead
  */
 
 /**
@@ -78,7 +78,7 @@ function createCommit(sha) {
 /**
  * @param {string} name
  * @param {string} [sha]
- * @returns {GitHubBranch}
+ * @returns {GitHubBranchWhereHead}
  */
 function createBranch(name, sha = "fixture-sha") {
   return {
@@ -243,7 +243,9 @@ function createActivity({
  *   createStatusStatus?: number,
  *   createStatusResponse?: GitHubDeploymentStatus,
  *   branchesWhereHeadStatus?: number,
- *   branchesWhereHead?: GitHubBranch[],
+ *   branchesWhereHead?: GitHubBranchWhereHead[],
+ *   pullRequestStatus?: number,
+ *   pullRequestHeadRef?: string|undefined,
  *   storage?: UpsunStorage
  * }} params
  * @returns {FetchCall[]}
@@ -271,6 +273,8 @@ function runScript({
   createStatusResponse = createGitHubDeploymentStatus(),
   branchesWhereHeadStatus = 200,
   branchesWhereHead = [createBranch(activity.environments[0] || "main")],
+  pullRequestStatus = 200,
+  pullRequestHeadRef = undefined,
   storage = createStorage(),
 }) {
   /** @type {FetchCall[]} */
@@ -297,6 +301,18 @@ function runScript({
         status: branchesWhereHeadStatus,
         statusText: getStatusText(branchesWhereHeadStatus),
         json: () => branchesWhereHead,
+      };
+    }
+
+    if (/\/pulls\/\d+$/.test(url) && method === "GET") {
+      return {
+        ok: pullRequestStatus >= 200 && pullRequestStatus < 300,
+        status: pullRequestStatus,
+        statusText: getStatusText(pullRequestStatus),
+        json: () =>
+          pullRequestStatus >= 200 && pullRequestStatus < 300
+            ? { head: { ref: pullRequestHeadRef } }
+            : { message: "Not Found" },
       };
     }
 
@@ -484,6 +500,91 @@ test("create deployment falls back to commit SHA when no branch is resolved", ()
   assert.ok(createDeploymentCall);
   assert.ok(createDeploymentCall.body);
   assert.equal(createDeploymentCall.body.ref, "abc123");
+});
+
+test("create deployment resolves branch from PR on redeploy", () => {
+  const activity = createActivity({
+    id: "act-3e",
+    type: "environment.redeploy",
+    state: "in_progress",
+    environment: "pr-1408",
+    environmentType: "development",
+  });
+  // Redeploy events do not carry commits
+  activity.payload.commits = [];
+  activity.parameters = {};
+
+  const calls = runScript({
+    activity,
+    deployments: [],
+    pullRequestHeadRef: "feature/my-branch",
+  });
+
+  const pullsCall = calls.find((call) => {
+    return call.method === "GET" && /\/pulls\/1408$/.test(call.url);
+  });
+  assert.ok(pullsCall);
+
+  const createDeploymentCall = calls.find((call) => {
+    return call.method === "POST" && /\/deployments$/.test(call.url);
+  });
+  assert.ok(createDeploymentCall);
+  assert.ok(createDeploymentCall.body);
+  assert.equal(createDeploymentCall.body.ref, "feature/my-branch");
+});
+
+test("create deployment falls back to environment name when PR lookup returns no branch", () => {
+  const activity = createActivity({
+    id: "act-3f",
+    type: "environment.redeploy",
+    state: "in_progress",
+    environment: "pr-999",
+    environmentType: "development",
+  });
+  activity.payload.commits = [];
+  activity.parameters = {};
+
+  const calls = runScript({
+    activity,
+    deployments: [],
+    pullRequestHeadRef: undefined,
+  });
+
+  const createDeploymentCall = calls.find((call) => {
+    return call.method === "POST" && /\/deployments$/.test(call.url);
+  });
+  assert.ok(createDeploymentCall);
+  assert.ok(createDeploymentCall.body);
+  assert.equal(createDeploymentCall.body.ref, "pr-999");
+});
+
+test("create deployment skips PR lookup for non-PR environment names on redeploy", () => {
+  const activity = createActivity({
+    id: "act-3g",
+    type: "environment.redeploy",
+    state: "in_progress",
+    environment: "staging",
+    environmentType: "development",
+  });
+  activity.payload.commits = [];
+  activity.parameters = {};
+
+  const calls = runScript({
+    activity,
+    deployments: [],
+  });
+
+  const pullsCall = calls.find((call) => {
+    return call.method === "GET" && /\/pulls\//.test(call.url);
+  });
+  assert.equal(pullsCall, undefined);
+
+  const createDeploymentCall = calls.find((call) => {
+    return call.method === "POST" && /\/deployments$/.test(call.url);
+  });
+  assert.ok(createDeploymentCall);
+  assert.ok(createDeploymentCall.body);
+  assert.equal(createDeploymentCall.body.ref, "staging");
 });
 
 test("environment.push (in_progress) marks mapped deployment as in progress", () => {

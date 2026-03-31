@@ -132,7 +132,7 @@ export interface GitHubDeploymentStatus {
 
 export type GitHubDeploymentsResponse = GitHubDeployment[];
 
-export interface GitHubBranch {
+export interface GitHubBranchWhereHead {
   name: string;
   commit: {
     sha: string;
@@ -141,4 +141,19 @@ export interface GitHubBranch {
   protected: boolean;
 }
 
-export type GitHubBranchesWhereHeadResponse = GitHubBranch[];
+export type GitHubBranchesWhereHeadResponse = GitHubBranchWhereHead[];
+
+export interface GitHubPullRequestBranch {
+  label: string;
+  ref: string;
+  sha: string;
+}
+
+export interface GitHubPullRequest {
+  id: number;
+  number: number;
+  state: "open" | "closed";
+  title: string;
+  head: GitHubPullRequestBranch;
+  base: GitHubPullRequestBranch;
+}

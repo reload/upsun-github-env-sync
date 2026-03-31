@@ -30,6 +30,7 @@
  * @typedef {import("./types").GitHubDeploymentStatus} GitHubDeploymentStatus
  * @typedef {import("./types").GitHubDeploymentsResponse} GitHubDeploymentsResponse
  * @typedef {import("./types").GitHubBranchesWhereHeadResponse} GitHubBranchesWhereHeadResponse
+ * @typedef {import("./types").GitHubPullRequest} GitHubPullRequest
  * @typedef {import("./types").UpsunRoute} UpsunRoute
  */
 
@@ -516,6 +517,20 @@ function getBranchByHeadCommit(context, commitSha) {
 }
 
 /**
+ * Lookup the head branch name for a pull request.
+ * @param {UpsunValidatedContext} context
+ * @param {number} pullNumber
+ * @returns {string}
+ */
+function getBranchByPullRequest(context, pullNumber) {
+  const url = `${GITHUB_API_BASE}/repos/${context.variables.GH_REPO}/pulls/${pullNumber}`;
+  const response = fetchGitHub(context, url);
+  /** @type {GitHubPullRequest} */
+  const pull = response.json();
+  return pull.head.ref;
+}
+
+/**
  * Resolve deployment ref from activity context.
  * @param {UpsunValidatedContext} context
  * @returns {string}
@@ -536,10 +551,23 @@ function getRef(context) {
     return commitSha;
   }
 
+  // Try to resolve a branch from a pr-<number> environment name
+  const environment = activity.environments[0];
+  const prMatch = environment.match(/^pr-(\d+)$/);
+  if (prMatch) {
+    const branch = getBranchByPullRequest(context, Number(prMatch[1]));
+    if (branch) {
+      console.log(
+        `Using branch name ${branch} environment name ${environment} as deployment ref`,
+      );
+      return branch;
+    }
+  }
+
   console.log(
-    `Falling back to environment name ${activity.environments[0]} as deployment ref`,
+    `Falling back to environment name ${environment} as deployment ref`,
   );
-  return activity.environments[0];
+  return environment;
 }
 
 /**
