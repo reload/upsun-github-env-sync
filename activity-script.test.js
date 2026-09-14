@@ -8,7 +8,9 @@ const vm = require("node:vm");
 /**
  * Shared type definitions for tests and runtime.
  * @typedef {import("./types").UpsunActivity} UpsunActivity
+ * @typedef {import("./types").UpsunActivityPayload} UpsunActivityPayload
  * @typedef {import("./types").UpsunVariables} UpsunVariables
+ * @typedef {import("./types").UpsunValidatedVariables} UpsunValidatedVariables
  * @typedef {import("./types").UpsunProject} UpsunProject
  * @typedef {import("./types").UpsunEnvironment} UpsunEnvironment
  * @typedef {import("./types").UpsunUser} UpsunUser
@@ -28,6 +30,9 @@ const vm = require("node:vm");
 
 const scriptPath = path.join(__dirname, "activity-script.js");
 const script = fs.readFileSync(scriptPath, "utf8");
+
+/** @type {UpsunValidatedVariables} */
+const defaultVariables = { GH_TOKEN: "fake-token", GH_REPO: "owner/repo" };
 
 /**
  * @param {string} name
@@ -208,9 +213,7 @@ function createActivity({
         environmentType,
         environmentStatus,
       ),
-      commits: [createCommit("abc123")],
     },
-    parameters: { new_commit: "abc123" },
   };
 
   if (primaryRouteUrl && activity.payload) {
@@ -228,6 +231,21 @@ function createActivity({
   }
 
   return activity;
+}
+
+/**
+ * Push activities carry a commit. Redeploys carry none.
+ * @param {Omit<Parameters<typeof createActivity>[0], "type"> & { type?: string }} options
+ * @returns {UpsunActivity & { payload: UpsunActivityPayload }}
+ */
+function createPushActivity({ type = "environment.push", ...options }) {
+  const activity = createActivity({ type, ...options });
+  const payload = /** @type {UpsunActivityPayload} */ (activity.payload);
+  return {
+    ...activity,
+    payload: { ...payload, commits: [createCommit("abc123")] },
+    parameters: { new_commit: "abc123" },
+  };
 }
 
 /**
@@ -252,7 +270,7 @@ function createActivity({
  */
 function runScript({
   activity,
-  variables = { GH_TOKEN: "fake-token", GH_REPO: "owner/repo" },
+  variables = defaultVariables,
   project = {
     subscription: {
       subscription_management_uri:
@@ -428,9 +446,8 @@ test("inactive environments are skipped", () => {
 
 test("environment.push (pending) creates a deployment when one is not mapped", () => {
   const storage = createStorage();
-  const activity = createActivity({
+  const activity = createPushActivity({
     id: "act-3",
-    type: "environment.push",
     state: "pending",
   });
   const calls = runScript({
@@ -464,9 +481,8 @@ test("environment.push (pending) creates a deployment when one is not mapped", (
 });
 
 test("create deployment uses branch name resolved from head commit", () => {
-  const activity = createActivity({
+  const activity = createPushActivity({
     id: "act-3b",
-    type: "environment.push",
     state: "pending",
     environment: "pr-123",
     environmentType: "development",
@@ -488,9 +504,8 @@ test("create deployment uses branch name resolved from head commit", () => {
 });
 
 test("create deployment falls back to commit SHA when no branch is resolved", () => {
-  const activity = createActivity({
+  const activity = createPushActivity({
     id: "act-3c",
-    type: "environment.push",
     state: "pending",
     environment: "pr-125",
     environmentType: "development",
@@ -518,9 +533,6 @@ test("create deployment resolves branch from PR on redeploy", () => {
     environment: "pr-1408",
     environmentType: "development",
   });
-  // Redeploy events do not carry commits
-  activity.payload.commits = [];
-  activity.parameters = {};
 
   const calls = runScript({
     activity,
@@ -533,7 +545,8 @@ test("create deployment resolves branch from PR on redeploy", () => {
   });
   assert.ok(graphqlCall);
   assert.ok(graphqlCall.body);
-  assert.equal(graphqlCall.body.variables.number, 1408);
+  const [owner, repo] = defaultVariables.GH_REPO.split("/");
+  assert.deepEqual(graphqlCall.body.variables, { owner, repo, number: 1408 });
 
   const createDeploymentCall = calls.find((call) => {
     return call.method === "POST" && /\/deployments$/.test(call.url);
@@ -551,8 +564,6 @@ test("create deployment falls back to environment name when PR lookup returns no
     environment: "pr-999",
     environmentType: "development",
   });
-  activity.payload.commits = [];
-  activity.parameters = {};
 
   const calls = runScript({
     activity,
@@ -576,8 +587,6 @@ test("create deployment skips PR lookup for non-PR environment names on redeploy
     environment: "staging",
     environmentType: "development",
   });
-  activity.payload.commits = [];
-  activity.parameters = {};
 
   const calls = runScript({
     activity,
@@ -880,9 +889,8 @@ test("environment.delete deactivates the latest deployment", () => {
 });
 
 test("throws when branch lookup by head commit fails", () => {
-  const activity = createActivity({
+  const activity = createPushActivity({
     id: "act-3d",
-    type: "environment.push",
     state: "pending",
   });
 
