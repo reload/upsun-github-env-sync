@@ -11,6 +11,10 @@ inputs:
   github_deploy_token:
     description: "GitHub token the activity script uses. Needs Contents: read, Pull requests: read, Deployments: read and write, Environments: read and write"
     required: true
+  upsun_cli_version:
+    description: "Upsun CLI version to install, for example 5.11.0. Empty installs the latest release"
+    required: false
+    default: ""
 
 outputs:
   integration_id:
@@ -24,6 +28,7 @@ runs:
       shell: bash
       env:
         INSTALL_DIR: ${{ runner.temp }}/upsun-cli
+        VERSION: ${{ inputs.upsun_cli_version }}
         GITHUB_TOKEN: ${{ github.token }}
       run: |
         set -euo pipefail
