@@ -2,6 +2,7 @@
   "name": "upsun-github-env-sync",
   "version": "1.0.0",
   "private": true,
+  "license": "MIT",
   "description": "Reusable Upsun activity script and GitHub Action for GitHub deployment sync",
   "scripts": {
     "lint:prettier": "prettier --check *.js *.d.ts",
