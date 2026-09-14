@@ -10,6 +10,7 @@ const vm = require("node:vm");
  * @typedef {import("./types").UpsunActivity} UpsunActivity
  * @typedef {import("./types").UpsunActivityPayload} UpsunActivityPayload
  * @typedef {import("./types").UpsunVariables} UpsunVariables
+ * @typedef {import("./types").UpsunValidatedVariables} UpsunValidatedVariables
  * @typedef {import("./types").UpsunProject} UpsunProject
  * @typedef {import("./types").UpsunEnvironment} UpsunEnvironment
  * @typedef {import("./types").UpsunUser} UpsunUser
@@ -29,6 +30,9 @@ const vm = require("node:vm");
 
 const scriptPath = path.join(__dirname, "activity-script.js");
 const script = fs.readFileSync(scriptPath, "utf8");
+
+/** @type {UpsunValidatedVariables} */
+const defaultVariables = { GH_TOKEN: "fake-token", GH_REPO: "owner/repo" };
 
 /**
  * @param {string} name
@@ -266,7 +270,7 @@ function createPushActivity({ type = "environment.push", ...options }) {
  */
 function runScript({
   activity,
-  variables = { GH_TOKEN: "fake-token", GH_REPO: "owner/repo" },
+  variables = defaultVariables,
   project = {
     subscription: {
       subscription_management_uri:
@@ -541,7 +545,8 @@ test("create deployment resolves branch from PR on redeploy", () => {
   });
   assert.ok(graphqlCall);
   assert.ok(graphqlCall.body);
-  assert.equal(graphqlCall.body.variables.number, 1408);
+  const [owner, repo] = defaultVariables.GH_REPO.split("/");
+  assert.deepEqual(graphqlCall.body.variables, { owner, repo, number: 1408 });
 
   const createDeploymentCall = calls.find((call) => {
     return call.method === "POST" && /\/deployments$/.test(call.url);
