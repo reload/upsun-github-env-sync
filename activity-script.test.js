@@ -946,9 +946,8 @@ test("throws when latest deployment lookup fails", () => {
 test("throws when creating a deployment fails", () => {
   const deployments = [];
   const createDeploymentStatus = 500;
-  const activity = createActivity({
+  const activity = createPushActivity({
     id: "act-13",
-    type: "environment.push",
     state: "pending",
   });
   const run = () =>
