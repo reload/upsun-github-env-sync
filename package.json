@@ -9,7 +9,7 @@
     "lint:types": "tsc --noEmit --allowJs --checkJs --types node --skipLibCheck --strictNullChecks --noUncheckedIndexedAccess --module nodenext --target es2021 *.js *.d.ts",
     "lint": "concurrently \"npm:lint:prettier\" \"npm:lint:types\"",
     "format": "prettier --write *.js *.d.ts",
-    "test": "node --test activity-script.test.js",
+    "test": "node --test",
     "check": "concurrently \"npm:lint\" \"npm:test\""
   },
   "devDependencies": {
