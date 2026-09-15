@@ -1,0 +1,31 @@
+# Copy to .github/workflows/upsun-github-env-sync.yml in the consumer repository.
+name: Upsun GitHub Env Sync
+
+on:
+  schedule:
+    # Nightly, 04:00 UTC. Picks up new releases of the action.
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/upsun-github-env-sync.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upsun-github-env-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install or update the activity script
+        uses: reload/upsun-github-env-sync@v1
+        with:
+          upsun_project_id: ${{ vars.UPSUN_PROJECT_ID }}
+          upsun_api_token: ${{ secrets.UPSUN_API_TOKEN }}
+          github_deploy_token: ${{ secrets.GH_DEPLOY_TOKEN }}

@@ -1,18 +1,22 @@
 {
   "name": "upsun-github-env-sync",
-  "version": "1.0.0",
+  "version": "0.0.0",
   "private": true,
+  "license": "MIT",
   "description": "Reusable Upsun activity script and GitHub Action for GitHub deployment sync",
   "scripts": {
     "lint:prettier": "prettier --check *.js *.d.ts",
     "lint:types": "tsc --noEmit --allowJs --checkJs --types node --skipLibCheck --strictNullChecks --noUncheckedIndexedAccess --module nodenext --target es2021 *.js *.d.ts",
     "lint": "concurrently \"npm:lint:prettier\" \"npm:lint:types\"",
     "format": "prettier --write *.js *.d.ts",
-    "test": "node --test activity-script.test.js",
-    "check": "concurrently \"npm:lint\" \"npm:test\""
+    "test": "node --test",
+    "check": "concurrently \"npm:lint\" \"npm:test\"",
+    "lint:commits": "commitlint --from origin/main --to HEAD --verbose"
   },
   "devDependencies": {
-    "@types/node": "^20.19.10",
+    "@commitlint/cli": "^21.2.2",
+    "@commitlint/config-conventional": "^21.2.2",
+    "@types/node": "^24.13.4",
     "concurrently": "^9.2.4",
     "prettier": "^3.6.2",
     "typescript": "^5.9.2"

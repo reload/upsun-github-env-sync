@@ -1,0 +1,48 @@
+name: "Upsun GitHub Env Sync"
+description: "Install or update the Upsun activity script that syncs environments to GitHub deployments"
+
+inputs:
+  upsun_project_id:
+    description: "Upsun project ID"
+    required: true
+  upsun_api_token:
+    description: "Upsun API token with access to the project"
+    required: true
+  github_deploy_token:
+    description: "GitHub token the activity script uses. Needs Contents: read, Pull requests: read, Deployments: read and write, Environments: read and write"
+    required: true
+  upsun_cli_version:
+    description: "Upsun CLI version to install, for example 5.11.0. Empty installs the latest release"
+    required: false
+    default: ""
+
+outputs:
+  integration_id:
+    description: "ID of the script integration that was created or updated"
+    value: ${{ steps.setup.outputs.integration_id }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install Upsun CLI
+      shell: bash
+      env:
+        INSTALL_DIR: ${{ runner.temp }}/upsun-cli
+        VERSION: ${{ inputs.upsun_cli_version }}
+        GITHUB_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        mkdir -p "$INSTALL_DIR"
+        curl -fsSL https://raw.githubusercontent.com/upsun/cli/main/installer.sh | sh
+        echo "$INSTALL_DIR" >> "$GITHUB_PATH"
+        "$INSTALL_DIR/upsun" --version
+
+    - name: Sync script integration
+      id: setup
+      shell: bash
+      env:
+        UPSUN_PROJECT_ID: ${{ inputs.upsun_project_id }}
+        UPSUN_CLI_TOKEN: ${{ inputs.upsun_api_token }}
+        GITHUB_DEPLOY_TOKEN: ${{ inputs.github_deploy_token }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: node "$ACTION_PATH/setup.js"
