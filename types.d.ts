@@ -75,9 +75,7 @@ export type UpsunValidatedVariables = UpsunVariables & {
 };
 
 export interface UpsunProject {
-  subscription: {
-    subscription_management_uri?: string;
-  };
+  organization: string | null;
 }
 
 export interface UpsunContext {

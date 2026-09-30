@@ -460,23 +460,13 @@ function getEnvironmentUrl(activity) {
  * @return {string|undefined}
  */
 function getLogUrl(context) {
-  // The owner slug is not directly available in any of the provided properties
-  // so we have to extract it.
-  // Separate the first part of the path which contains the slug.
-  const subscriptionManagementUri =
-    context.project.subscription.subscription_management_uri;
-  const matches = subscriptionManagementUri?.match(/\.com\/([^/]+)/);
-
-  if (!matches?.[1]) {
-    console.log(
-      "Unable to determine Upsun owner organization from subscription_management_uri",
-      subscriptionManagementUri,
-    );
+  const organizationId = context.project.organization;
+  if (!organizationId) {
+    console.log("Unable to determine Upsun organization for log url");
     return undefined;
   }
 
-  const ownerSlug = matches[1];
-  return `https://console.upsun.com/${ownerSlug}/${context.activity.project}/-/log/${context.activity.id}`;
+  return `https://console.upsun.com/${organizationId}/${context.activity.project}/-/log/${context.activity.id}`;
 }
 
 /**
