@@ -222,19 +222,22 @@ function main() {
   const actionPath = requireEnv("ACTION_PATH");
   const githubOutput = requireEnv("GITHUB_OUTPUT");
 
+  const version = require(path.resolve(actionPath, "package.json")).version;
   const integrationId = sync({
     client: createCliClient({
       projectId: requireEnv("UPSUN_PROJECT_ID"),
       scriptFile: path.join(actionPath, "activity-script.js"),
     }),
-    version: require(path.resolve(actionPath, "package.json")).version,
+    version,
     githubRepository: requireEnv("GITHUB_REPOSITORY"),
     githubDeployToken: requireEnv("GITHUB_DEPLOY_TOKEN"),
     log: console.log,
   });
 
   appendFileSync(githubOutput, `integration_id=${integrationId}\n`);
-  console.log(`Synchronized integration ${integrationId}`);
+  console.log(
+    `Synchronized integration ${integrationId} with activity script ${version}`,
+  );
 }
 
 if (require.main === module) {
