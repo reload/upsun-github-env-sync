@@ -271,12 +271,7 @@ function createPushActivity({ type = "environment.push", ...options }) {
 function runScript({
   activity,
   variables = defaultVariables,
-  project = {
-    subscription: {
-      subscription_management_uri:
-        "https://accounts.upsun.com/my-org/subscriptions/abc",
-    },
-  },
+  project = { organization: "org-for-default-project" },
   latestDeploymentStatus = 200,
   deploymentByIdStatus = 200,
   deployments = [
@@ -659,6 +654,55 @@ test("environment.push (complete) marks mapped deployment as success", () => {
   assert.ok(createStatusCall.body);
   assert.equal(createStatusCall.body.state, "success");
   assert.equal(createStatusCall.body.auto_inactive, true);
+});
+
+test("deployment status links to the activity log in the project organization", () => {
+  const storage = createStorage({
+    "upsun-github-deployment-by-activity:act-log": "781",
+  });
+  const activity = createActivity({
+    id: "act-log",
+    type: "environment.push",
+    state: "complete",
+    result: "success",
+  });
+  const calls = runScript({
+    activity,
+    project: { organization: "org-with-log" },
+    storage,
+    deployments: [createGitHubDeployment(781, "main")],
+  });
+  const createStatusCall = calls.find((call) => {
+    return call.method === "POST" && /\/statuses$/.test(call.url);
+  });
+  assert.ok(createStatusCall?.body);
+  assert.equal(
+    createStatusCall.body.log_url,
+    `https://console.upsun.com/org-with-log/${activity.project}/-/log/act-log`,
+  );
+});
+
+test("deployment status omits log url when project has no organization", () => {
+  const storage = createStorage({
+    "upsun-github-deployment-by-activity:act-no-org": "782",
+  });
+  const activity = createActivity({
+    id: "act-no-org",
+    type: "environment.push",
+    state: "complete",
+    result: "success",
+  });
+  const calls = runScript({
+    activity,
+    project: { organization: null },
+    storage,
+    deployments: [createGitHubDeployment(782, "main")],
+  });
+  const createStatusCall = calls.find((call) => {
+    return call.method === "POST" && /\/statuses$/.test(call.url);
+  });
+  assert.ok(createStatusCall?.body);
+  assert.equal("log_url" in createStatusCall.body, false);
 });
 
 test("environment.push (complete failure) marks mapped deployment as failure", () => {
