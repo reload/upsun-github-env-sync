@@ -1,3 +1,9 @@
+## [0.2.0](https://github.com/reload/upsun-github-env-sync/compare/v0.1.1...v0.2.0) (2026-09-30)
+
+### Features
+
+* log the installed activity script version ([177e160](https://github.com/reload/upsun-github-env-sync/commit/177e160cc2150f43815f32373597111f26081bd9))
+
 ## [0.1.1](https://github.com/reload/upsun-github-env-sync/compare/v0.1.0...v0.1.1) (2026-09-30)
 
 ### Bug Fixes
